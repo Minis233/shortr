@@ -3,14 +3,15 @@ main = "src/index.js"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Public base URL printed by the dashboard. Override per environment if you
-# bind a custom domain via routes/zones.
+# `LINKS_NAMESPACE_ID` mirrors the KV id below so the admin login URL
+# `/<KV_ID>/<ADMIN_TOKEN>` can be assembled at runtime.
 [vars]
 PUBLIC_BASE = ""
-RESERVED_SLUGS = "api,admin,login,logout,assets,static,favicon.ico,robots.txt,_health,healthz"
+RESERVED_SLUGS = "api,admin,login,signup,logout,my,assets,static,favicon.ico,robots.txt,_health,healthz"
 DEFAULT_SLUG_LENGTH = "6"
 MAX_URL_LENGTH = "2048"
-ALLOW_PUBLIC = "false"
+ALLOW_PUBLIC = "true"
+LINKS_NAMESPACE_ID = "24fe2c029739451e9bfad3f9b3432ea8"
 
 # Replace `id` with the namespace ID printed by:
 #   npx wrangler kv namespace create LINKS
@@ -18,7 +19,25 @@ ALLOW_PUBLIC = "false"
 binding = "LINKS"
 id = "24fe2c029739451e9bfad3f9b3432ea8"
 
-# Optional: pin a custom domain. Uncomment and edit after creating the zone.
+# Wildcard custom domains. Pick the host pattern that matches your zone.
+# Examples:
+#   pattern = "s.example.com/*"          one host, any path (a single redirect host)
+#   pattern = "*.example.com/*"          every subdomain on the zone
+#   pattern = "example.com/*"            apex on the zone
+# All host names are zone-scoped, so the zone must already exist on this Cloudflare account.
+# `custom_domain = true` only works for a single host; use a route entry for wildcards.
+#
+# Wildcard subdomain (any sub-host on example.com hits this Worker):
+# [[routes]]
+# pattern = "*.example.com/*"
+# zone_name = "example.com"
+#
+# Apex domain (example.com/*):
+# [[routes]]
+# pattern = "example.com/*"
+# zone_name = "example.com"
+#
+# Single subdomain bound as a managed custom domain (DNS + cert auto-provisioned):
 # [[routes]]
 # pattern = "s.example.com"
 # custom_domain = true
