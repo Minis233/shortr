@@ -32,10 +32,13 @@ nav.top a.btn, nav.top button.btn {
   font-size: 13px; padding: 6px 11px; border-radius: 7px;
   background: transparent; color: var(--fg);
   border: 1px solid var(--line); text-decoration: none; cursor: pointer; line-height: 1;
+  width: auto; margin: 0;
 }
 nav.top a.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
 nav.top .user { font-size: 13px; color: var(--muted); margin-right: 4px; }
 nav.top .lang-btn { min-width: 38px; }
+nav.top .logout-form { display: inline-flex; margin: 0; padding: 0; }
+nav.top .logout-btn { width: auto; margin: 0; }
 main {
   flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 18px 14px 60px;
 }
@@ -178,14 +181,14 @@ export function navBar({ user, isAdmin }) {
   const userTag = user
     ? `<span class="user">@${escapeHtml(user.username)}</span>
        <a class="btn" href="/my" data-i18n="navMy">My links</a>
-       <form method="POST" action="/api/auth/logout" style="display:inline;margin:0">
-         <button class="btn" type="submit" data-i18n="navLogout">Logout</button>
+       <form method="POST" action="/api/auth/logout" class="logout-form">
+         <button class="btn logout-btn" type="submit" data-i18n="navLogout">Logout</button>
        </form>`
     : isAdmin
     ? `<span class="user tag admin" data-i18n="ownerAdmin">admin</span>
        <a class="btn" href="/admin" data-i18n="navDashboard">Dashboard</a>
-       <form method="POST" action="/api/auth/logout" style="display:inline;margin:0">
-         <button class="btn" type="submit" data-i18n="navLogout">Logout</button>
+       <form method="POST" action="/api/auth/logout" class="logout-form">
+         <button class="btn logout-btn" type="submit" data-i18n="navLogout">Logout</button>
        </form>`
     : `<a class="btn" href="/login" data-i18n="navLogin">Login</a>
        <a class="btn primary" href="/signup" data-i18n="navSignup">Sign up</a>`;

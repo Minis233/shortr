@@ -58,12 +58,33 @@ export default {
     if (!env.ADMIN_TOKEN) {
       return errorResponse("ADMIN_TOKEN secret is not set. Run `wrangler secret put ADMIN_TOKEN`.", 500);
     }
-    if (!env.ADMIN_USER) {
-      return errorResponse("ADMIN_USER var is not set. Edit wrangler.toml [vars] ADMIN_USER and `wrangler deploy`.", 500);
+
+    // Force HTTPS. Behind Cloudflare, the original scheme is in
+    // x-forwarded-proto (the URL itself is normalised to https by some edges
+    // even on plain HTTP). Both signals are checked; if either says http we
+    // 301 the visitor to the https equivalent.
+    const xfp = request.headers.get("x-forwarded-proto");
+    const u = new URL(request.url);
+    if (u.protocol === "http:" || (xfp && xfp.toLowerCase() === "http")) {
+      u.protocol = "https:";
+      return new Response(null, {
+        status: 301,
+        headers: {
+          location: u.toString(),
+          "strict-transport-security": "max-age=31536000; includeSubDomains",
+        },
+      });
     }
 
     try {
-      return await route(request, env, ctx);
+      const res = await route(request, env, ctx);
+      // Nudge browsers to remember HTTPS for a year.
+      if (!res.headers.has("strict-transport-security")) {
+        const h = new Headers(res.headers);
+        h.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+        return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+      }
+      return res;
     } catch (err) {
       console.error("unhandled", err && err.stack || err);
       return errorResponse("internal error", 500);
@@ -89,23 +110,37 @@ async function route(request, env, ctx) {
       headers: { "content-type": "text/plain" },
     });
 
+  const identity = await readIdentity(request, env);
+  let isAdmin = identity.session?.kind === "admin";
+  const user = identity.user;
+
   // 2. Admin login URL: /<KV_ID>/<ADMIN_TOKEN>
-  // GET unlocks the admin login form (sets a short-lived "admin_unlock" cookie).
-  // POST submits username + password against a real account whose username
-  // must equal env.ADMIN_USER.
+  // Behaviour:
+  //   - Already an admin session → just redirect to /admin.
+  //   - Already logged in as a regular user matching ADMIN_USER (or any user
+  //     when ADMIN_USER is empty) → upgrade the session to admin and 303
+  //     to /admin. No second password prompt.
+  //   - Otherwise (anonymous or wrong username) → render the admin login
+  //     form. POST verifies credentials of a registered account whose
+  //     username equals ADMIN_USER (when set) and upgrades them.
   const adminPath = adminLoginPathPattern(env);
   if (adminPath && isApex && path === adminPath) {
     if (method === "GET") {
-      const cookie = startAdminUnlockCookie();
-      return htmlResponseWithCookies(adminLoginPage({ error: "", username: "" }), 200, [cookie]);
+      if (isAdmin) return redirect("/admin");
+      if (user && allowedAdminUser(env, user.username)) {
+        // Upgrade the existing user session straight to admin.
+        const { cookie } = await startSession(env, "admin", { userId: user.id });
+        return new Response(null, {
+          status: 303,
+          headers: { location: "/admin", "set-cookie": cookie, "cache-control": "no-store" },
+        });
+      }
+      const unlockCookie = startAdminUnlockCookie();
+      return htmlResponseWithCookies(adminLoginPage({ error: "", username: user?.username || "" }), 200, [unlockCookie]);
     }
-    if (method === "POST") return handleAdminLogin(request, env);
+    if (method === "POST") return handleAdminLogin(request, env, identity);
     return errorResponse("method not allowed", 405);
   }
-
-  const identity = await readIdentity(request, env);
-  const isAdmin = identity.session?.kind === "admin";
-  const user = identity.user;
 
   // 3. Apex-only chrome (dashboards, auth, API). On a host-prefix request
   // we fall through to the slug routes so that e.g. foo.example.com/login
@@ -281,6 +316,15 @@ function adminLoginPathPattern(env) {
   return `/${env.LINKS_NAMESPACE_ID}/${env.ADMIN_TOKEN}`;
 }
 
+// Whether `username` is allowed to be promoted to admin. When env.ADMIN_USER
+// is empty, anyone with a valid login + the secret URL can upgrade. When set,
+// only that exact username (case-insensitive) qualifies.
+function allowedAdminUser(env, username) {
+  const required = (env.ADMIN_USER || "").trim();
+  if (!required) return true;
+  return username && username.toLowerCase() === required.toLowerCase();
+}
+
 function isOwnerOf(identity, rec) {
   if (!rec || !rec.owner) return false;
   if (identity.session?.kind === "admin") return true;
@@ -327,11 +371,13 @@ function clearAdminUnlockCookie() {
   return `${ADMIN_UNLOCK_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly; Secure`;
 }
 
-async function handleAdminLogin(request, env) {
-  // Must hold the unlock cookie (i.e. came in via the admin login URL).
+async function handleAdminLogin(request, env, identity) {
+  // Must hold the unlock cookie (i.e. came in via the admin login URL)
+  // OR already have a session — the secret URL still required to reach this
+  // handler, so a lingering session is fine.
   const cookieHdr = request.headers.get("cookie") || "";
   const unlocked = cookieHdr.split(";").some((c) => c.trim().startsWith(ADMIN_UNLOCK_COOKIE + "="));
-  if (!unlocked) {
+  if (!unlocked && !identity?.user && !identity?.session) {
     return new Response(adminLoginPage({ error: "Session expired. Reload the admin URL.", username: "" }), { status: 401, headers: HTML_HEADERS });
   }
 
@@ -342,14 +388,13 @@ async function handleAdminLogin(request, env) {
     return new Response(adminLoginPage({ error: "Enter username and password.", username }), { status: 400, headers: HTML_HEADERS });
   }
 
-  // The submitted username must equal env.ADMIN_USER (case-insensitive).
-  if (username.toLowerCase() !== env.ADMIN_USER.toLowerCase()) {
+  if (!allowedAdminUser(env, username)) {
     // Verify a dummy hash to keep timing constant.
     await verifyPassword(password, "pbkdf2$1$AAAA$AAAA");
     return new Response(adminLoginPage({ error: "Wrong admin username or password.", username }), { status: 401, headers: HTML_HEADERS });
   }
 
-  const userId = await getUserIdByUsername(env, env.ADMIN_USER);
+  const userId = await getUserIdByUsername(env, username);
   const adminUser = userId ? await getUser(env, userId) : null;
   const ok = adminUser
     ? await verifyPassword(password, adminUser.passwordHash)
@@ -532,6 +577,8 @@ async function handleShorten(request, env, identity) {
     url: dest,
     createdAt: now,
     creatorIp: getClientIp(request),
+    creatorUa: request.headers.get("user-agent") || "",
+    creatorCountry: request.cf?.country || "",
     owner,
     editTokenHash,
     host, slug,

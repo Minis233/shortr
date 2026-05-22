@@ -642,6 +642,10 @@ export function adminPage({ baseDomain = "" } = {}) {
     </div>
     <label data-i18n="fieldOwner">${T("fieldOwner")}</label>
     <input id="eOwner" type="text" readonly class="mono">
+    <label data-i18n="fieldCreatorIp">${T("fieldCreatorIp")}</label>
+    <input id="eIp" type="text" readonly class="mono">
+    <label data-i18n="fieldCreatorUa">${T("fieldCreatorUa")}</label>
+    <textarea id="eUa" readonly class="mono" rows="2" style="resize:vertical"></textarea>
     <div class="actions">
       <button type="button" class="ghost" id="eCancel" data-i18n="btnCancel">${T("btnCancel")}</button>
       <button type="button" class="danger" id="eDelete" data-i18n="btnDelete">${T("btnDelete")}</button>
@@ -769,6 +773,8 @@ $("tableWrap").addEventListener("click", async (e) => {
       $("ePwd").value = "";
       $("eNote").value = data.note || "";
       $("eOwner").value = data.owner ? JSON.stringify(data.owner) : "(none)";
+      $("eIp").value = data.creatorIp || "";
+      $("eUa").value = (data.creatorCountry ? "[" + data.creatorCountry + "] " : "") + (data.creatorUa || "");
       $("editDlg").showModal();
     } catch (err) { alert(err.message); }
   }

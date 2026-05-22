@@ -14,10 +14,11 @@ MAX_URL_LENGTH = "2048"
 ALLOW_PUBLIC = "true"
 LINKS_NAMESPACE_ID = "24fe2c029739451e9bfad3f9b3432ea8"
 
-# Required username for admin login. After unlocking the admin login page with
-# `/<KV_ID>/<ADMIN_TOKEN>`, sign in as this user (you must register a normal
-# account with this username first via /signup, then enter that password).
-ADMIN_USER = "admin"
+# Optional: restrict which username can be promoted to admin via the secret URL.
+# When empty, ANY registered user that visits /<KV_ID>/<ADMIN_TOKEN> while
+# logged in is upgraded to admin (good for single-user instances). When set,
+# only that exact username (case-insensitive) qualifies.
+ADMIN_USER = ""
 
 # Optional. Set this to enable hostname-based short links such as
 # `my.example.com` or `my.example.com/abc`. Cloudflare must already route

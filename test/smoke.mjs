@@ -844,5 +844,88 @@ await test("Signup with Turnstile success token is accepted", async () => {
   }
 });
 
+await test("HTTP request is 301-upgraded to HTTPS", async () => {
+  const env = makeEnv();
+  const res = await worker.fetch(new Request("http://example.test/foo", { redirect: "manual" }), env, ctx);
+  assert(res.status === 301, "status " + res.status);
+  assert(res.headers.get("location") === "https://example.test/foo", res.headers.get("location"));
+});
+
+await test("HSTS header is added to normal responses", async () => {
+  const env = makeEnv();
+  const res = await worker.fetch(req("/healthz"), env, ctx);
+  assert(res.headers.get("strict-transport-security")?.includes("max-age="));
+});
+
+await test("Already-logged-in admin user gets auto-upgraded by secret URL", async () => {
+  const env = makeEnv();
+  // Sign up an admin-named user
+  const sup = await worker.fetch(req("/api/auth/signup", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=${encodeURIComponent(ADMIN_USER_NAME)}&password=${encodeURIComponent(ADMIN_USER_PASS)}`,
+  }), env, ctx);
+  const userSid = getCookie(sup, "shortr_sid");
+  // Visit secret URL with that session — should upgrade to admin without password prompt.
+  const res = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`, { headers: { cookie: "shortr_sid=" + userSid } }), env, ctx);
+  assert(res.status === 303, "status " + res.status);
+  assert(res.headers.get("location") === "/admin");
+  const adminSid = getCookie(res, "shortr_sid");
+  assert(adminSid && adminSid !== userSid, "should mint a fresh admin session");
+  // Confirm /admin works with the new session
+  const adm = await worker.fetch(req("/admin", { headers: { cookie: "shortr_sid=" + adminSid } }), env, ctx);
+  assert(adm.status === 200);
+});
+
+await test("Logged-in non-admin user lands on the password form via secret URL", async () => {
+  const env = makeEnv({ ADMIN_USER: ADMIN_USER_NAME });
+  await worker.fetch(req("/api/auth/signup", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=plain&password=plainpass-1`,
+  }), env, ctx);
+  const sup = await worker.fetch(req("/api/auth/login", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=plain&password=plainpass-1`,
+  }), env, ctx);
+  const sid = getCookie(sup, "shortr_sid");
+  const res = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`, { headers: { cookie: "shortr_sid=" + sid } }), env, ctx);
+  // Should NOT auto-upgrade — should serve the form (200) with an unlock cookie.
+  assert(res.status === 200, "status " + res.status);
+  assert(getCookie(res, "shortr_admin_unlock"));
+});
+
+await test("ADMIN_USER unset = any logged-in user can upgrade via secret URL", async () => {
+  const env = makeEnv({ ADMIN_USER: "" });
+  await worker.fetch(req("/api/auth/signup", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=anyuser&password=anypass-1`,
+  }), env, ctx);
+  const lo = await worker.fetch(req("/api/auth/login", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=anyuser&password=anypass-1`,
+  }), env, ctx);
+  const sid = getCookie(lo, "shortr_sid");
+  const res = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`, { headers: { cookie: "shortr_sid=" + sid } }), env, ctx);
+  assert(res.status === 303);
+});
+
+await test("Creator IP and UA are recorded on link records", async () => {
+  const env = makeEnv();
+  const r = await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "user-agent": "TestUA/1.0",
+      "cf-connecting-ip": "203.0.113.42",
+    },
+    body: JSON.stringify({ url: "https://example.com/", slug: "ipua1" }),
+  }), env, ctx);
+  assert(r.status === 201);
+  const sid = await adminSid(env);
+  const get = await worker.fetch(req("/api/admin/links/ipua1", { headers: { cookie: "shortr_sid=" + sid } }), env, ctx);
+  const d = await get.json();
+  assert(d.creatorIp === "203.0.113.42", "creatorIp=" + d.creatorIp);
+  assert(d.creatorUa === "TestUA/1.0", "creatorUa=" + d.creatorUa);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
