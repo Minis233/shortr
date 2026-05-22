@@ -1,0 +1,16 @@
+{
+  "name": "shortr",
+  "version": "1.0.0",
+  "description": "A minimal, fast URL shortener on Cloudflare Workers + KV.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "node test/smoke.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,24 @@
+name = "shortr"
+main = "src/index.js"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Public base URL printed by the dashboard. Override per environment if you
+# bind a custom domain via routes/zones.
+[vars]
+PUBLIC_BASE = ""
+RESERVED_SLUGS = "api,admin,login,logout,assets,static,favicon.ico,robots.txt,_health,healthz"
+DEFAULT_SLUG_LENGTH = "6"
+MAX_URL_LENGTH = "2048"
+ALLOW_PUBLIC = "false"
+
+# Replace `id` with the namespace ID printed by:
+#   npx wrangler kv namespace create LINKS
+[[kv_namespaces]]
+binding = "LINKS"
+id = "24fe2c029739451e9bfad3f9b3432ea8"
+
+# Optional: pin a custom domain. Uncomment and edit after creating the zone.
+# [[routes]]
+# pattern = "s.example.com"
+# custom_domain = true
