@@ -1,4 +1,6 @@
-// Shared HTML scaffolding: head, layout, common CSS.
+// Shared HTML scaffolding: head, layout, common CSS, i18n hook.
+
+import { I18N_BOOTSTRAP } from "./i18n.js";
 
 export const COMMON_CSS = `
 :root {
@@ -11,41 +13,45 @@ export const COMMON_CSS = `
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
   background: var(--bg); color: var(--fg);
   min-height: 100vh; display: flex; flex-direction: column;
+  -webkit-text-size-adjust: 100%;
 }
 a { color: var(--accent); }
 nav.top {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 18px; border-bottom: 1px solid var(--line);
-  background: var(--bg);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line); background: var(--bg);
+  position: sticky; top: 0; z-index: 5;
 }
 nav.top .brand { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
 nav.top .brand a { color: var(--fg); text-decoration: none; }
-nav.top .grow { flex: 1; }
+nav.top .grow { flex: 1; min-width: 8px; }
 nav.top a.btn, nav.top button.btn {
-  font-size: 13px; padding: 6px 12px; border-radius: 7px;
+  font-size: 13px; padding: 6px 11px; border-radius: 7px;
   background: transparent; color: var(--fg);
-  border: 1px solid var(--line); text-decoration: none; cursor: pointer;
+  border: 1px solid var(--line); text-decoration: none; cursor: pointer; line-height: 1;
 }
 nav.top a.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
-nav.top .user { font-size: 13px; color: var(--muted); margin-right: 6px; }
+nav.top .user { font-size: 13px; color: var(--muted); margin-right: 4px; }
+nav.top .lang-btn { min-width: 38px; }
 main {
-  flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 22px 18px 60px;
+  flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: 18px 14px 60px;
 }
 .page-wide main { max-width: 1100px; }
 .card {
   background: var(--bg-elev); border: 1px solid var(--line); border-radius: 14px;
-  padding: 18px; margin-bottom: 16px;
+  padding: 16px; margin-bottom: 14px;
   box-shadow: 0 1px 0 rgba(255,255,255,0.02), 0 4px 20px rgba(0,0,0,0.18);
 }
 .card h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
 label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
-input[type=text], input[type=url], input[type=password], input[type=email], input[type=number], input[type=search], textarea, select {
-  width: 100%; padding: 10px 12px;
+input[type=text], input[type=url], input[type=password], input[type=email], input[type=number], input[type=search], input[type=datetime-local], textarea, select {
+  width: 100%; padding: 11px 12px;
   background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
   color: var(--fg); font: inherit; outline: none; transition: border-color .15s;
+  font-size: 16px; /* prevent iOS zoom on focus */
 }
 input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 .row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -54,11 +60,12 @@ button, .btn-primary {
   margin-top: 16px; width: 100%; padding: 12px;
   border: 0; border-radius: 9px; background: var(--accent); color: var(--accent-fg);
   font-weight: 600; font-size: 15px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
 button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
 button.danger { background: transparent; color: var(--danger); border: 1px solid var(--line); }
-button.inline { width: auto; margin: 0; padding: 6px 12px; font-size: 13px; }
+button.inline { width: auto; margin: 0; padding: 7px 12px; font-size: 13px; }
 .muted { color: var(--muted); font-size: 12px; margin-top: 6px; }
 .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px;
   background: var(--bg); border: 1px solid var(--line); color: var(--muted); margin-right: 4px; }
@@ -69,7 +76,8 @@ button.inline { width: auto; margin: 0; padding: 6px 12px; font-size: 13px; }
 .tag.user { color: var(--accent); border-color: #1a2a4a; }
 .tag.anon { color: var(--muted); }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
-.toolbar input { flex: 1 1 240px; }
+.toolbar input { flex: 1 1 200px; }
+.toolbar .count { flex: 0 0 auto; }
 .empty { padding: 36px 0; text-align: center; color: var(--muted); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
@@ -78,8 +86,9 @@ th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: v
 .dest { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .copy-btn, .icon-btn {
   background: transparent; border: 1px solid var(--line); color: var(--muted);
-  padding: 4px 9px; border-radius: 6px; font-size: 11px; cursor: pointer;
-  margin: 0; width: auto;
+  padding: 5px 10px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  margin: 0; width: auto; line-height: 1.2;
+  -webkit-tap-highlight-color: transparent;
 }
 .icon-btn.ghost { color: var(--fg); }
 .icon-btn.danger { color: var(--danger); }
@@ -94,11 +103,15 @@ footer.foot {
 }
 .advanced { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 8px; }
 summary { cursor: pointer; font-size: 13px; color: var(--muted); list-style: none; padding: 6px 0; }
-summary::before { content: "▸  "; }
-details[open] summary::before { content: "▾  "; }
-dialog { background: var(--bg-elev); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 18px; max-width: 90vw; width: 460px; }
+summary::before { content: "\\25B8  "; }
+details[open] summary::before { content: "\\25BE  "; }
+dialog {
+  background: var(--bg-elev); color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
+  padding: 18px; max-width: 92vw; width: 460px;
+  max-height: calc(100vh - 32px); overflow: auto;
+}
 dialog::backdrop { background: rgba(0,0,0,0.55); }
-.actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
 .actions button { width: auto; margin: 0; }
 .short-result { padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; word-break: break-all; }
 .short-result.ok { border-color: var(--ok); }
@@ -106,6 +119,46 @@ dialog::backdrop { background: rgba(0,0,0,0.55); }
 .short-result a { font-family: ui-monospace, monospace; font-size: 15px; }
 .edit-link { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
 .codebox { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+
+/* ---------- Mobile (<= 640px): collapse tables to cards, tighten chrome ---------- */
+@media (max-width: 640px) {
+  body { font-size: 14px; }
+  nav.top { padding: 9px 12px; gap: 6px; }
+  nav.top a.btn, nav.top button.btn { padding: 6px 10px; font-size: 12px; }
+  nav.top .user { font-size: 12px; max-width: 36vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  main { padding: 14px 12px 60px; }
+  .card { padding: 14px; border-radius: 12px; }
+  .row { gap: 8px; }
+  .row > * { flex: 1 1 100%; }
+  .toolbar { gap: 6px; }
+  .toolbar input { flex: 1 1 100%; }
+  .toolbar .inline { flex: 1 1 calc(50% - 4px); }
+  dialog { width: 100%; padding: 16px; border-radius: 12px 12px 0 0; max-height: 90vh;
+    margin: auto auto 0; position: fixed; left: 0; right: 0; bottom: 0; top: auto; }
+
+  /* Card-style table on small screens. */
+  table.responsive thead { display: none; }
+  table.responsive, table.responsive tbody, table.responsive tr, table.responsive td { display: block; width: 100%; }
+  table.responsive tr {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    margin-bottom: 10px; background: var(--bg);
+  }
+  table.responsive td {
+    padding: 4px 0; border: 0;
+    display: flex; gap: 8px; align-items: flex-start; justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  table.responsive td::before {
+    content: attr(data-label);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--muted); font-weight: 600; flex: 0 0 auto;
+    padding-top: 2px;
+  }
+  table.responsive td > * { flex: 1 1 auto; min-width: 0; }
+  table.responsive td .dest { max-width: 100%; white-space: normal; overflow: visible; word-break: break-all; }
+  table.responsive td.actions-cell { justify-content: flex-end; gap: 6px; padding-top: 6px; }
+  table.responsive td.actions-cell::before { display: none; }
+}
 `;
 
 export const FAVICON =
@@ -114,35 +167,39 @@ export const FAVICON =
 export function navBar({ user, isAdmin }) {
   const userTag = user
     ? `<span class="user">@${escapeHtml(user.username)}</span>
-       <a class="btn" href="/my">My links</a>
+       <a class="btn" href="/my" data-i18n="navMy">My links</a>
        <form method="POST" action="/api/auth/logout" style="display:inline;margin:0">
-         <button class="btn" type="submit">Logout</button>
+         <button class="btn" type="submit" data-i18n="navLogout">Logout</button>
        </form>`
     : isAdmin
-    ? `<span class="user tag admin">admin</span>
-       <a class="btn" href="/admin">Dashboard</a>
+    ? `<span class="user tag admin" data-i18n="ownerAdmin">admin</span>
+       <a class="btn" href="/admin" data-i18n="navDashboard">Dashboard</a>
        <form method="POST" action="/api/auth/logout" style="display:inline;margin:0">
-         <button class="btn" type="submit">Logout</button>
+         <button class="btn" type="submit" data-i18n="navLogout">Logout</button>
        </form>`
-    : `<a class="btn" href="/login">Login</a>
-       <a class="btn primary" href="/signup">Sign up</a>`;
+    : `<a class="btn" href="/login" data-i18n="navLogin">Login</a>
+       <a class="btn primary" href="/signup" data-i18n="navSignup">Sign up</a>`;
   return `<nav class="top">
     <div class="brand"><a href="/">shortr</a></div>
     <div class="grow"></div>
+    <button class="btn lang-btn" id="langBtn" type="button" onclick="window.shortrToggleLang()" data-i18n="langToggle">中文</button>
     ${userTag}
   </nav>`;
 }
 
-export function pageShell({ title, body, user, isAdmin, wide = false, extraHead = "" }) {
+export function pageShell({ title, body, user, isAdmin, wide = false, extraHead = "", titleKey = "" }) {
   return `<!doctype html>
-<html lang="en">
+<html lang="en"${titleKey ? ` data-i18n-title="${titleKey}"` : ""}>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
 <meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f7f8fc" media="(prefers-color-scheme: light)">
 <title>${escapeHtml(title)}</title>
 <link rel="icon" href="${FAVICON}">
 <style>${COMMON_CSS}</style>
+<script>${I18N_BOOTSTRAP}</script>
 ${extraHead}
 </head>
 <body class="${wide ? "page-wide" : ""}">

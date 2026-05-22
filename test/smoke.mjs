@@ -546,5 +546,36 @@ await test("Logout clears cookie", async () => {
   assert(!html.includes("@greg"), "should not show old user");
 });
 
+await test("Admin page does not leak the namespace ID", async () => {
+  const env = makeEnv();
+  // Get an admin session
+  const r = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`), env, ctx);
+  const sid = getCookie(r, "shortr_sid");
+  const adm = await worker.fetch(req("/admin", { headers: { cookie: "shortr_sid=" + sid } }), env, ctx);
+  assert(adm.status === 200);
+  const html = await adm.text();
+  assert(!html.includes(KV_ID), "admin page should not mention KV_ID");
+  assert(!html.includes("Manage every link"), "admin page should not mention old hint text");
+  assert(!html.includes("login URL is bound"), "admin page should not mention old hint text");
+});
+
+await test("Pages ship both English and Chinese dictionaries", async () => {
+  const env = makeEnv();
+  const html = await (await worker.fetch(req("/"), env, ctx)).text();
+  assert(html.includes('"zh"'), "should embed zh dictionary");
+  assert(html.includes('"en"'), "should embed en dictionary");
+  assert(html.includes("生成短链"), "should embed Chinese strings");
+  assert(html.includes("Shorten a URL"), "should keep English strings as fallback");
+  assert(html.includes('id="langBtn"'), "should render the language toggle button");
+});
+
+await test("Pages declare mobile-friendly viewport", async () => {
+  const env = makeEnv();
+  const html = await (await worker.fetch(req("/"), env, ctx)).text();
+  assert(html.includes("width=device-width"), "viewport meta missing");
+  assert(html.includes("@media (max-width: 640px)"), "mobile breakpoint missing");
+  assert(html.includes("table.responsive"), "responsive table CSS missing");
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

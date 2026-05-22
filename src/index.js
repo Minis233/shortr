@@ -140,7 +140,7 @@ async function route(request, env, ctx) {
   }
   if (path === "/admin" && method === "GET") {
     if (!isAdmin) return redirect("/login");
-    return htmlResponse(adminPage({ kvId: env.LINKS_NAMESPACE_ID || "(set LINKS_NAMESPACE_ID for admin URL)" }));
+    return htmlResponse(adminPage());
   }
 
   // 4. Auth API (form-encoded for resilience without JS).
