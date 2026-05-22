@@ -2,6 +2,7 @@ name = "shortr"
 main = "src/index.js"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
 # `LINKS_NAMESPACE_ID` mirrors the KV id below so the admin login URL
 # `/<KV_ID>/<ADMIN_TOKEN>` can be assembled at runtime.
@@ -23,30 +24,23 @@ ADMIN_USER = "admin"
 # `*.<BASE_DOMAIN>` to this Worker (see [[routes]] below).
 BASE_DOMAIN = ""
 
-# Optional Cloudflare Turnstile keys. Empty = disabled (no captcha on signup).
-# Site key is public, secret is loaded via `wrangler secret put TURNSTILE_SECRET`.
-TURNSTILE_SITEKEY = ""
+# Cloudflare Turnstile site key (public). Pair with `wrangler secret put TURNSTILE_SECRET`.
+TURNSTILE_SITEKEY = "0x4AAAAAADUWeltJZaDJIr3b"
 
-# Replace `id` with the namespace ID printed by:
-#   npx wrangler kv namespace create LINKS
 [[kv_namespaces]]
 binding = "LINKS"
 id = "24fe2c029739451e9bfad3f9b3432ea8"
 
-# Wildcard custom domains. Pick the host pattern that matches your zone.
-# Examples:
-#   pattern = "s.example.com/*"          one host, any path (a single redirect host)
-#   pattern = "*.example.com/*"          every subdomain on the zone (host slugs)
-#   pattern = "example.com/*"            apex on the zone
-# All host names are zone-scoped, so the zone must already exist on this Cloudflare account.
-# `custom_domain = true` only works for a single host; use a route entry for wildcards.
-#
-# To enable host-slug short links you typically need *both* the apex and the
-# wildcard route plus BASE_DOMAIN above set to "example.com":
+# Bound apex host. wrangler auto-creates the DNS + SSL records on this zone.
+[[routes]]
+pattern = "shortr.095233.xyz"
+custom_domain = true
+
+# Wildcard subdomain short links require a separate DNS step: add
+#     *.shortr   CNAME  shortr.095233.xyz   (proxied)
+# in the 095233.xyz zone, then uncomment the route below and redeploy.
+# After that, BASE_DOMAIN above can be set to "shortr.095233.xyz".
 # [[routes]]
-# pattern = "*.example.com/*"
-# zone_name = "example.com"
-#
-# [[routes]]
-# pattern = "example.com/*"
-# zone_name = "example.com"
+# pattern = "*.shortr.095233.xyz/*"
+# zone_name = "095233.xyz"
+
