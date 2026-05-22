@@ -583,20 +583,17 @@ async function handleShorten(request, env, identity) {
 
 function renderShortUrl(baseUrl, baseDomain, host, slug) {
   const u = new URL(baseUrl);
-  if (host && baseDomain) {
-    return `${u.protocol}//${host}.${baseDomain}${u.port ? ":" + u.port : ""}/${slug || ""}`.replace(/\/$/, slug ? "/" + slug : "");
-  }
-  return `${u.protocol}//${u.host}/${slug || ""}`;
+  const port = u.port ? ":" + u.port : "";
+  const apex = host && baseDomain ? `${host}.${baseDomain}${port}` : `${u.host}`;
+  return slug ? `${u.protocol}//${apex}/${slug}` : `${u.protocol}//${apex}`;
 }
 function renderEditUrl(baseUrl, baseDomain, host, slug, token) {
   const u = new URL(baseUrl);
-  // Edit URL always lives on the host where the short link resolves, with
-  // path /<slug>:<token>. For host-only links (slug==""), the path is
-  // /:<token>.
-  if (host && baseDomain) {
-    return `${u.protocol}//${host}.${baseDomain}${u.port ? ":" + u.port : ""}/${slug || ""}:${token}`.replace("//:", "/:");
-  }
-  return `${u.protocol}//${u.host}/${slug || ""}:${token}`;
+  const port = u.port ? ":" + u.port : "";
+  const apex = host && baseDomain ? `${host}.${baseDomain}${port}` : `${u.host}`;
+  // For path slugs: /<slug>:<token>
+  // For host-only links (slug==""): /:<token>
+  return `${u.protocol}//${apex}/${slug || ""}:${token}`;
 }
 
 // ---------- Owner-scoped (/api/me/...) ----------

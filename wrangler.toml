@@ -22,7 +22,7 @@ ADMIN_USER = "admin"
 # Optional. Set this to enable hostname-based short links such as
 # `my.example.com` or `my.example.com/abc`. Cloudflare must already route
 # `*.<BASE_DOMAIN>` to this Worker (see [[routes]] below).
-BASE_DOMAIN = ""
+BASE_DOMAIN = "shortr.095233.xyz"
 
 # Cloudflare Turnstile site key (public). Pair with `wrangler secret put TURNSTILE_SECRET`.
 TURNSTILE_SITEKEY = "0x4AAAAAADUWeltJZaDJIr3b"
@@ -36,11 +36,10 @@ id = "24fe2c029739451e9bfad3f9b3432ea8"
 pattern = "shortr.095233.xyz"
 custom_domain = true
 
-# Wildcard subdomain short links require a separate DNS step: add
-#     *.shortr   CNAME  shortr.095233.xyz   (proxied)
-# in the 095233.xyz zone, then uncomment the route below and redeploy.
-# After that, BASE_DOMAIN above can be set to "shortr.095233.xyz".
-# [[routes]]
-# pattern = "*.shortr.095233.xyz/*"
-# zone_name = "095233.xyz"
+# Wildcard subdomain short links — `*.shortr.095233.xyz` already has a
+# proxied CNAME pointing back at the apex, so this route handles every
+# subdomain under it.
+[[routes]]
+pattern = "*.shortr.095233.xyz/*"
+zone_name = "095233.xyz"
 

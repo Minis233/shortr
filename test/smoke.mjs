@@ -718,6 +718,36 @@ await test("Host-only short link resolves on subdomain", async () => {
   assert(r.headers.get("location") === "https://example.com/host-only");
 });
 
+await test("Host + slug shortUrl is well-formed (regression: no //)", async () => {
+  const env = makeEnv({ BASE_DOMAIN: "example.test" });
+  // host-only
+  const r1 = await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/", host: "alpha" }),
+  }), env, ctx);
+  const d1 = await r1.json();
+  assert(d1.shortUrl === "https://alpha.example.test", d1.shortUrl);
+  assert(d1.editUrl === `https://alpha.example.test/:${d1.editToken}`, d1.editUrl);
+
+  // host + path
+  const r2 = await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/", host: "beta", slug: "x" }),
+  }), env, ctx);
+  const d2 = await r2.json();
+  assert(d2.shortUrl === "https://beta.example.test/x", d2.shortUrl);
+  assert(d2.editUrl === `https://beta.example.test/x:${d2.editToken}`, d2.editUrl);
+
+  // path only at apex
+  const r3 = await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/", slug: "yy" }),
+  }), env, ctx);
+  const d3 = await r3.json();
+  assert(d3.shortUrl === "https://example.test/yy", d3.shortUrl);
+  assert(d3.editUrl === `https://example.test/yy:${d3.editToken}`, d3.editUrl);
+});
+
 await test("Host + slug on subdomain resolves", async () => {
   const env = makeEnv({ BASE_DOMAIN: "example.test" });
   await worker.fetch(new Request("https://example.test/api/shorten", {
