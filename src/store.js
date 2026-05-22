@@ -1,29 +1,23 @@
 // KV storage helpers.
 //
 // Schema:
-//   link:<slug>             -> JSON LinkRecord (with KV expirationTtl when expires)
-//   stats:<slug>            -> JSON StatsRecord
-//   user:<userId>           -> JSON UserRecord (no password value, only PBKDF2 hash)
-//   username:<lowercase>    -> userId  (uniqueness lookup)
+//   link:<host>:<slug>      -> JSON LinkRecord (with KV expirationTtl when expires)
+//                              <host> is the host-prefix (subdomain) WITHOUT the BASE_DOMAIN,
+//                              or "" for the apex/default host. Always lowercase ASCII.
+//   stats:<host>:<slug>     -> JSON StatsRecord
+//   user:<userId>           -> JSON UserRecord
+//   username:<lowercase>    -> userId
 //   session:<sessionToken>  -> JSON SessionRecord (with TTL)
-//   idx:user:<userId>:<slug>-> "1"  (membership for fast listing)
-//   idx:anon:<anonId>:<slug>-> "1"
+//   idx:user:<userId>:<host>:<slug>   -> "1"
+//   idx:anon:<anonId>:<host>:<slug>   -> "1"
+//   idx:host:<host>:<slug>            -> "1"  (admin can list all hosts in one place)
 //
 // LinkRecord {
 //   url, createdAt, expiresAt?, maxClicks?, passwordHash?, note?, creatorIp?,
-//   owner: { kind: 'admin'|'user'|'anon', userId?, anonId? },
-//   editTokenHash,            // sha256 hex of the 32-char edit token
-// }
-//
-// UserRecord {
-//   id, username, usernameLower, passwordHash (pbkdf2 string), createdAt,
-// }
-//
-// SessionRecord {
-//   kind: 'admin' | 'user',
-//   userId?: string,
-//   createdAt: number,
-//   expiresAt: number,
+//   host,                        // "" or e.g. "my", lowercase
+//   slug,                        // path slug, may be "" when host-only
+//   owner: { kind, userId?, anonId? },
+//   editTokenHash,
 // }
 
 const LINK_PREFIX = "link:";
@@ -33,56 +27,65 @@ const USERNAME_PREFIX = "username:";
 const SESSION_PREFIX = "session:";
 const IDX_USER_PREFIX = "idx:user:";
 const IDX_ANON_PREFIX = "idx:anon:";
+const IDX_HOST_PREFIX = "idx:host:";
+
+function linkKey(host, slug) { return LINK_PREFIX + (host || "") + ":" + (slug || ""); }
+function statsKey(host, slug) { return STATS_PREFIX + (host || "") + ":" + (slug || ""); }
 
 // ---------- Links ----------
 
-export async function getLink(env, slug) {
-  const raw = await env.LINKS.get(LINK_PREFIX + slug);
+export async function getLink(env, host, slug) {
+  const raw = await env.LINKS.get(linkKey(host, slug));
   return raw ? JSON.parse(raw) : null;
 }
 
-export async function putLink(env, slug, record) {
+export async function putLink(env, host, slug, record) {
   const opts = {};
   if (record.expiresAt) {
     const ttl = Math.floor((record.expiresAt - Date.now()) / 1000);
     if (ttl > 60) opts.expirationTtl = ttl;
   }
-  await env.LINKS.put(LINK_PREFIX + slug, JSON.stringify(record), opts);
+  await env.LINKS.put(linkKey(host, slug), JSON.stringify(record), opts);
 }
 
-export async function deleteLink(env, slug, owner) {
+export async function deleteLink(env, host, slug, owner) {
   const tasks = [
-    env.LINKS.delete(LINK_PREFIX + slug),
-    env.LINKS.delete(STATS_PREFIX + slug),
+    env.LINKS.delete(linkKey(host, slug)),
+    env.LINKS.delete(statsKey(host, slug)),
+    env.LINKS.delete(IDX_HOST_PREFIX + (host || "") + ":" + (slug || "")),
   ];
   if (owner) {
     if (owner.kind === "user" && owner.userId) {
-      tasks.push(env.LINKS.delete(IDX_USER_PREFIX + owner.userId + ":" + slug));
+      tasks.push(env.LINKS.delete(IDX_USER_PREFIX + owner.userId + ":" + (host || "") + ":" + (slug || "")));
     } else if (owner.kind === "anon" && owner.anonId) {
-      tasks.push(env.LINKS.delete(IDX_ANON_PREFIX + owner.anonId + ":" + slug));
+      tasks.push(env.LINKS.delete(IDX_ANON_PREFIX + owner.anonId + ":" + (host || "") + ":" + (slug || "")));
     }
   }
   await Promise.all(tasks);
 }
 
-export async function indexLink(env, slug, owner) {
-  if (!owner) return;
-  if (owner.kind === "user" && owner.userId) {
-    await env.LINKS.put(IDX_USER_PREFIX + owner.userId + ":" + slug, "1");
-  } else if (owner.kind === "anon" && owner.anonId) {
-    await env.LINKS.put(IDX_ANON_PREFIX + owner.anonId + ":" + slug, "1");
+export async function indexLink(env, host, slug, owner) {
+  const hs = (host || "") + ":" + (slug || "");
+  const tasks = [env.LINKS.put(IDX_HOST_PREFIX + hs, "1")];
+  if (owner) {
+    if (owner.kind === "user" && owner.userId) {
+      tasks.push(env.LINKS.put(IDX_USER_PREFIX + owner.userId + ":" + hs, "1"));
+    } else if (owner.kind === "anon" && owner.anonId) {
+      tasks.push(env.LINKS.put(IDX_ANON_PREFIX + owner.anonId + ":" + hs, "1"));
+    }
   }
+  await Promise.all(tasks);
 }
 
 // ---------- Stats ----------
 
-export async function getStats(env, slug) {
-  const raw = await env.LINKS.get(STATS_PREFIX + slug);
+export async function getStats(env, host, slug) {
+  const raw = await env.LINKS.get(statsKey(host, slug));
   return raw ? JSON.parse(raw) : { clicks: 0 };
 }
 
-export async function bumpStats(env, slug, info) {
-  const cur = await getStats(env, slug);
+export async function bumpStats(env, host, slug, info) {
+  const cur = await getStats(env, host, slug);
   const next = {
     clicks: (cur.clicks || 0) + 1,
     lastSeenAt: Date.now(),
@@ -90,21 +93,31 @@ export async function bumpStats(env, slug, info) {
     lastUserAgent: info.userAgent || cur.lastUserAgent,
     lastCountry: info.country || cur.lastCountry,
   };
-  await env.LINKS.put(STATS_PREFIX + slug, JSON.stringify(next));
+  await env.LINKS.put(statsKey(host, slug), JSON.stringify(next));
   return next;
 }
 
 // ---------- Listing ----------
 
 export async function listAllLinks(env, { prefix = "", cursor = null, limit = 50 } = {}) {
+  // prefix searches by slug across all hosts via the IDX_HOST index.
   const list = await env.LINKS.list({
-    prefix: LINK_PREFIX + prefix,
+    prefix: IDX_HOST_PREFIX,
     cursor: cursor || undefined,
-    limit,
+    limit: Math.min(limit * 4, 1000),
   });
-  const records = await Promise.all(
-    list.keys.map((k) => loadLinkWithStats(env, k.name.slice(LINK_PREFIX.length))),
-  );
+  const candidates = [];
+  for (const k of list.keys) {
+    const id = k.name.slice(IDX_HOST_PREFIX.length);
+    const sep = id.indexOf(":");
+    if (sep < 0) continue;
+    const host = id.slice(0, sep);
+    const slug = id.slice(sep + 1);
+    if (prefix && !slug.startsWith(prefix) && !host.startsWith(prefix)) continue;
+    candidates.push({ host, slug });
+    if (candidates.length >= limit) break;
+  }
+  const records = await Promise.all(candidates.map((c) => loadLinkWithStats(env, c.host, c.slug)));
   return {
     items: records.filter(Boolean),
     cursor: list.list_complete ? null : list.cursor,
@@ -123,14 +136,18 @@ export async function listOwnerLinks(env, owner, { cursor = null, limit = 100 } 
   if (!idxPrefix) return { items: [], cursor: null, listComplete: true };
 
   const list = await env.LINKS.list({ prefix: idxPrefix, cursor: cursor || undefined, limit });
-  const slugs = list.keys.map((k) => k.name.slice(idxPrefix.length));
-  const records = await Promise.all(slugs.map((s) => loadLinkWithStats(env, s)));
-  // Drop dangling index entries (link expired/deleted).
+  const refs = list.keys.map((k) => {
+    const tail = k.name.slice(idxPrefix.length);
+    const sep = tail.indexOf(":");
+    if (sep < 0) return null;
+    return { host: tail.slice(0, sep), slug: tail.slice(sep + 1) };
+  }).filter(Boolean);
+  const records = await Promise.all(refs.map((r) => loadLinkWithStats(env, r.host, r.slug)));
   const items = [];
   const cleanups = [];
   for (let i = 0; i < records.length; i++) {
     if (records[i]) items.push(records[i]);
-    else cleanups.push(env.LINKS.delete(idxPrefix + slugs[i]));
+    else cleanups.push(env.LINKS.delete(idxPrefix + (refs[i].host || "") + ":" + (refs[i].slug || "")));
   }
   if (cleanups.length) await Promise.all(cleanups);
   return {
@@ -140,16 +157,17 @@ export async function listOwnerLinks(env, owner, { cursor = null, limit = 100 } 
   };
 }
 
-async function loadLinkWithStats(env, slug) {
+async function loadLinkWithStats(env, host, slug) {
   const [linkRaw, statsRaw] = await Promise.all([
-    env.LINKS.get(LINK_PREFIX + slug),
-    env.LINKS.get(STATS_PREFIX + slug),
+    env.LINKS.get(linkKey(host, slug)),
+    env.LINKS.get(statsKey(host, slug)),
   ]);
   if (!linkRaw) return null;
   const link = JSON.parse(linkRaw);
   const stats = statsRaw ? JSON.parse(statsRaw) : { clicks: 0 };
   return {
-    slug,
+    host: link.host || "",
+    slug: link.slug || "",
     ...link,
     clicks: stats.clicks || 0,
     lastSeenAt: stats.lastSeenAt,

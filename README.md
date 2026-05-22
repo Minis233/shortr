@@ -1,15 +1,76 @@
 # shortr
 
-A minimal, fast URL shortener that runs entirely on Cloudflare Workers + Workers KV. No external server, no database, no daemons. One Worker, one KV namespace, two secrets.
+A minimal, fast URL shortener that runs entirely on Cloudflare Workers + Workers KV. No external server, no database, no daemons.
 
-- Custom domain wildcards: bind `*.example.com/*`, `example.com/*`, or any single-host route
-- Three account modes: admin, registered users, anonymous (cookie-tracked)
-- Per-link 32-character edit token — share to delegate management without sharing your account
-- Custom slugs, auto-generated slugs (no `0/O/1/l`), TTL expiry, click caps, password-protected redirects
-- Built-in admin dashboard at `/<KV_ID>/<ADMIN_TOKEN>` — bookmark the URL, open it from any device, get an HTTP-only session cookie
+- **Subdomain + path slugs**: `foo.example.com`, `example.com/abc`, `foo.example.com/abc` all work side-by-side
+- **Three account modes**: admin, registered users, anonymous (cookie-tracked)
+- **Per-link 32-character edit token** — share to delegate management without sharing your account
+- **TTL with units**: seconds, minutes, hours, days, months
+- **Two-factor admin login**: secret URL `/<KV_ID>/<ADMIN_TOKEN>` unlocks the login page; you also need the password of an account whose username equals `ADMIN_USER`
+- **Cloudflare Turnstile** captcha on signup (optional)
+- **Mobile-first responsive UI** with full English / 简体中文 toggle
+- Custom slugs, auto-generated 4-character slugs (no `0/O/1/l`), click caps, password-protected redirects
 - "My links" dashboard for everyone, including anonymous visitors (cached locally + cookie-bound)
-- Click counters with last-seen referer/UA/country
 - 0 runtime dependencies (only `wrangler` as a devDep)
+
+## Admin login (two-step)
+
+Visiting `https://<your-host>/<LINKS_NAMESPACE_ID>/<ADMIN_TOKEN>` only **unlocks** the admin login form (sets a 10-minute `shortr_admin_unlock` cookie). To actually sign in you also need:
+
+1. A normal user account whose username matches the `ADMIN_USER` value in `wrangler.toml` (default: `admin`). Register it once via `/signup`.
+2. That user's password.
+
+Submitting the form on the secret URL with those credentials issues a 30-day session cookie and redirects to `/admin`. Knowing the secret URL alone is not enough — and knowing the admin password without the secret URL is also not enough.
+
+To rotate either factor:
+
+```bash
+# rotate the secret URL
+openssl rand -hex 32 | tr -d '\n' | npx wrangler secret put ADMIN_TOKEN
+# change which username acts as admin
+# edit wrangler.toml [vars] ADMIN_USER, then `npx wrangler deploy`
+```
+
+## Subdomain short links
+
+When `BASE_DOMAIN` is set in `wrangler.toml` and the matching wildcard route is configured, links can take any of these shapes:
+
+- `foo.example.com`           → host slug only
+- `example.com/abc`           → path slug at the apex
+- `foo.example.com/abc`       → host slug + path slug
+
+The two namespaces never collide. `example.com/blog` and `blog.example.com/` are independent records.
+
+```toml
+# wrangler.toml
+[vars]
+BASE_DOMAIN = "example.com"
+
+[[routes]]
+pattern = "*.example.com/*"
+zone_name = "example.com"
+
+[[routes]]
+pattern = "example.com/*"
+zone_name = "example.com"
+```
+
+When `BASE_DOMAIN` is empty the host field is hidden and the service falls back to path-only short links.
+
+## Cloudflare Turnstile (optional captcha on signup)
+
+Set both:
+
+```toml
+# wrangler.toml [vars]
+TURNSTILE_SITEKEY = "0x4AAAAAAA..."
+```
+
+```bash
+npx wrangler secret put TURNSTILE_SECRET   # paste the secret key
+```
+
+The signup form will load the widget and reject submissions whose token fails the `/turnstile/v0/siteverify` check. Leaving both empty disables captcha (anonymous signup is open).
 
 ## Deployment
 

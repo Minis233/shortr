@@ -154,6 +154,34 @@ export const I18N_DICT = {
     gatePwdRequired: "Password is required.",
     gatePwdWrong: "Incorrect password.",
 
+    // ttl units
+    ttlSeconds: "Seconds",
+    ttlMinutes: "Minutes",
+    ttlHours: "Hours",
+    ttlDays: "Days",
+    ttlMonths: "Months",
+    ttlValuePh: "e.g. 7",
+
+    // host slug
+    hostSlug: "Subdomain",
+    hostSlugPh: "e.g. blog",
+    hostSlugHelp: "Optional. Reserves <strong>{example}</strong> on this domain.",
+    hostSlugDisabled: "Subdomain short links require BASE_DOMAIN to be set.",
+
+    // admin login
+    titleAdminLogin: "Admin sign-in — shortr",
+    adminLoginHeading: "Admin sign-in",
+    adminLoginIntro: "You unlocked the admin login URL. Enter the admin account credentials to continue.",
+    adminLoginExpired: "Session expired. Reload the admin URL.",
+    adminLoginWrong: "Wrong admin username or password.",
+
+    // captcha
+    captchaPending: "Please complete the verification.",
+    captchaFailed: "Captcha verification failed. Please retry.",
+
+    // misc
+    backHome: "← Back to home",
+
     // 404 / 410
     titleNotFound: "Not found",
     titleGone: "Gone",
@@ -304,6 +332,29 @@ export const I18N_DICT = {
     btnContinue: "继续",
     gatePwdRequired: "请输入密码。",
     gatePwdWrong: "密码错误。",
+
+    ttlSeconds: "秒",
+    ttlMinutes: "分钟",
+    ttlHours: "小时",
+    ttlDays: "天",
+    ttlMonths: "月",
+    ttlValuePh: "例如 7",
+
+    hostSlug: "二级域名",
+    hostSlugPh: "如 blog",
+    hostSlugHelp: "可选。会把 <strong>{example}</strong> 占用为短链域名。",
+    hostSlugDisabled: "二级域名短链需要先配置 BASE_DOMAIN。",
+
+    titleAdminLogin: "后台登录 — shortr",
+    adminLoginHeading: "后台登录",
+    adminLoginIntro: "你已通过秘密链接解锁后台登录。请输入管理员账号密码继续。",
+    adminLoginExpired: "会话已过期，请重新访问后台秘密链接。",
+    adminLoginWrong: "管理员账号或密码错误。",
+
+    captchaPending: "请先完成人机验证。",
+    captchaFailed: "人机验证未通过，请重试。",
+
+    backHome: "← 返回首页",
 
     titleNotFound: "未找到",
     titleGone: "已失效",

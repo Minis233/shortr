@@ -123,9 +123,14 @@ dialog::backdrop { background: rgba(0,0,0,0.55); }
 /* ---------- Mobile (<= 640px): collapse tables to cards, tighten chrome ---------- */
 @media (max-width: 640px) {
   body { font-size: 14px; }
-  nav.top { padding: 9px 12px; gap: 6px; }
-  nav.top a.btn, nav.top button.btn { padding: 6px 10px; font-size: 12px; }
-  nav.top .user { font-size: 12px; max-width: 36vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  nav.top { padding: 8px 10px; gap: 5px; }
+  nav.top .brand { font-size: 15px; }
+  nav.top a.btn, nav.top button.btn { padding: 6px 9px; font-size: 12px; }
+  nav.top .user { font-size: 12px; max-width: 28vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 0; }
+  nav.top .lang-btn { min-width: 0; padding: 6px 8px; }
+  /* When signed in, drop the "My links" pill on tiny screens — the user can
+     still tap @username to find it via the future link. */
+  nav.top .nav-only-wide { display: none; }
   main { padding: 14px 12px 60px; }
   .card { padding: 14px; border-radius: 12px; }
   .row { gap: 8px; }
@@ -158,6 +163,11 @@ dialog::backdrop { background: rgba(0,0,0,0.55); }
   table.responsive td .dest { max-width: 100%; white-space: normal; overflow: visible; word-break: break-all; }
   table.responsive td.actions-cell { justify-content: flex-end; gap: 6px; padding-top: 6px; }
   table.responsive td.actions-cell::before { display: none; }
+}
+
+@media (max-width: 380px) {
+  /* Squeeze a bit more for very narrow phones. */
+  nav.top .brand { display: none; }
 }
 `;
 

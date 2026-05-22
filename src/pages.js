@@ -12,9 +12,31 @@ import { I18N_DICT } from "./i18n.js";
 const EN = I18N_DICT.en;
 const T = (k) => EN[k] || k;
 
+// Reusable bits.
+function ttlUnitSelect(selected = "s") {
+  const opts = [
+    ["s", "ttlSeconds"],
+    ["min", "ttlMinutes"],
+    ["h", "ttlHours"],
+    ["d", "ttlDays"],
+    ["mo", "ttlMonths"],
+  ];
+  return `<select name="ttlUnit" data-ttl-unit>
+    ${opts.map(([v, k]) => `<option value="${v}"${v === selected ? " selected" : ""} data-i18n="${k}">${T(k)}</option>`).join("")}
+  </select>`;
+}
+function turnstileWidget(siteKey, theme = "auto") {
+  if (!siteKey) return "";
+  return `<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}" data-theme="${theme}" style="margin-top:14px"></div>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer></script>`;
+}
+function backHomeLink() {
+  return `<div class="muted" style="margin-bottom:12px"><a href="/" data-i18n="backHome">${T("backHome")}</a></div>`;
+}
+
 // ---------- Public landing ----------
 
-export function landingPage({ user, isAdmin, allowPublic, defaultSlugLength, maxUrlLength }) {
+export function landingPage({ user, isAdmin, allowPublic, defaultSlugLength, maxUrlLength, baseDomain = "", turnstileSiteKey = "" }) {
   const banner = !user && !isAdmin && !allowPublic
     ? `<div class="banner"><span data-i18n="landingPublicOff">${T("landingPublicOff")}</span></div>`
     : "";
@@ -27,6 +49,16 @@ export function landingPage({ user, isAdmin, allowPublic, defaultSlugLength, max
     ? `<span data-i18n="explainAccount">${T("explainAccount")}</span>`
     : `<span data-i18n="explainAnon">${T("explainAnon")}</span>`;
 
+  const hostFieldHtml = baseDomain ? `
+      <div>
+        <label for="hostInp"><span data-i18n="hostSlug">${T("hostSlug")}</span> <span class="muted" data-i18n="optional">${T("optional")}</span></label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input id="hostInp" name="host" type="text" pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" maxlength="63"
+            style="text-transform:lowercase" placeholder="${escapeHtml(T("hostSlugPh"))}">
+          <span class="muted mono">.${escapeHtml(baseDomain)}</span>
+        </div>
+      </div>` : "";
+
   const body = `${banner}
 <div class="card">
 <h2 data-i18n="cardShorten">${T("cardShorten")}</h2>
@@ -38,28 +70,36 @@ export function landingPage({ user, isAdmin, allowPublic, defaultSlugLength, max
   <details class="advanced">
     <summary data-i18n="options">${T("options")}</summary>
     <div class="row">
+      ${hostFieldHtml}
       <div>
         <label for="slug"><span data-i18n="customSlug">${T("customSlug")}</span> <span class="muted" data-i18n="optional">${T("optional")}</span></label>
         <input id="slug" name="slug" type="text" pattern="[A-Za-z0-9_-]{1,64}" maxlength="64"
           placeholder="${T("autoSlug")} (${defaultSlugLength} ${T("chars")})">
       </div>
-      <div>
-        <label for="ttl"><span data-i18n="expiresIn">${T("expiresIn")}</span> <span class="muted" data-i18n="seconds">${T("seconds")}</span></label>
-        <input id="ttl" name="ttl" type="number" min="60" data-i18n-attr="placeholder=never" placeholder="${T("never")}">
-      </div>
     </div>
     <div class="row">
+      <div>
+        <label for="ttlValue"><span data-i18n="expiresIn">${T("expiresIn")}</span> <span class="muted" data-i18n="optional">${T("optional")}</span></label>
+        <div style="display:flex;gap:6px">
+          <input id="ttlValue" name="ttlValue" type="number" min="1" data-i18n-attr="placeholder=ttlValuePh" placeholder="${T("ttlValuePh")}" style="flex:2 1 0">
+          <span style="flex:3 1 0">${ttlUnitSelect("d")}</span>
+        </div>
+      </div>
       <div>
         <label for="maxClicks"><span data-i18n="maxClicks">${T("maxClicks")}</span> <span class="muted" data-i18n="optional">${T("optional")}</span></label>
         <input id="maxClicks" name="maxClicks" type="number" min="1" data-i18n-attr="placeholder=unlimited" placeholder="${T("unlimited")}">
       </div>
+    </div>
+    <div class="row">
       <div>
         <label for="password"><span data-i18n="password">${T("password")}</span> <span class="muted" data-i18n="optional">${T("optional")}</span></label>
         <input id="password" name="password" type="text" data-i18n-attr="placeholder=passwordPh" placeholder="${T("passwordPh")}">
       </div>
+      <div>
+        <label for="note"><span data-i18n="note">${T("note")}</span> <span class="muted" data-i18n="notePrivate">${T("notePrivate")}</span></label>
+        <input id="note" name="note" type="text" maxlength="200" data-i18n-attr="placeholder=noteLabelPh" placeholder="${T("noteLabelPh")}">
+      </div>
     </div>
-    <label for="note"><span data-i18n="note">${T("note")}</span> <span class="muted" data-i18n="notePrivate">${T("notePrivate")}</span></label>
-    <input id="note" name="note" type="text" maxlength="200" data-i18n-attr="placeholder=noteLabelPh" placeholder="${T("noteLabelPh")}">
   </details>
 
   <button type="submit" id="go" data-i18n="btnShorten">${T("btnShorten")}</button>
@@ -71,7 +111,7 @@ export function landingPage({ user, isAdmin, allowPublic, defaultSlugLength, max
   <h2 data-i18n="cardWhatHappens">${T("cardWhatHappens")}</h2>
   <p class="muted" style="margin:0">
     <span data-i18n="explainBase">${T("explainBase")}</span>
-    ${explainAccount.replace("My links", `<a href="/my">${T("navMy")}</a>`).replace("Sign up", `<a href="/signup">${T("navSignup")}</a>`)}
+    ${explainAccount}
   </p>
   <p class="muted" style="margin:8px 0 0">${myLink}</p>
 </div>`;
@@ -98,8 +138,10 @@ form.addEventListener("submit", async (e) => {
   out.innerHTML = ""; btn.disabled = true; btn.textContent = window.t("btnShortening");
   const body = {
     url: form.url.value,
+    host: form.host && form.host.value ? form.host.value.toLowerCase() : undefined,
     slug: form.slug.value || undefined,
-    ttl: form.ttl.value ? Number(form.ttl.value) : undefined,
+    ttlValue: form.ttlValue && form.ttlValue.value ? Number(form.ttlValue.value) : undefined,
+    ttlUnit: form.ttlUnit && form.ttlUnit.value ? form.ttlUnit.value : undefined,
     maxClicks: form.maxClicks.value ? Number(form.maxClicks.value) : undefined,
     password: form.password.value || undefined,
     note: form.note.value || undefined,
@@ -156,7 +198,7 @@ function bindCopyButtons(scope) {
 
 // ---------- Login / Signup ----------
 
-export function authPage({ kind, error = "", username = "" }) {
+export function authPage({ kind, error = "", username = "", turnstileSiteKey = "" }) {
   const isLogin = kind === "login";
   const heading = isLogin ? "authSignin" : "authCreate";
   const submitKey = isLogin ? "btnSignin" : "btnSignup";
@@ -165,15 +207,18 @@ export function authPage({ kind, error = "", username = "" }) {
     ? `<span data-i18n="noAccount">${T("noAccount")}</span> <a href="/signup" data-i18n="createOne">${T("createOne")}</a>`
     : `<span data-i18n="haveAccount">${T("haveAccount")}</span> <a href="/login" data-i18n="signInLink">${T("signInLink")}</a>`;
 
-  const body = `<div class="card" style="max-width:440px;margin:30px auto">
+  const captchaHtml = !isLogin ? turnstileWidget(turnstileSiteKey) : "";
+
+  const body = `${backHomeLink()}<div class="card" style="max-width:440px;margin:0 auto">
 <h2 data-i18n="${heading}">${T(heading)}</h2>
 ${error ? `<div class="banner error">${escapeHtml(error)}</div>` : ""}
-<form method="POST" action="/api/auth/${isLogin ? "login" : "signup"}" autocomplete="${isLogin ? "on" : "off"}">
+<form method="POST" action="/api/auth/${isLogin ? "login" : "signup"}" autocomplete="${isLogin ? "on" : "off"}" id="authForm">
   <label data-i18n="username">${T("username")}</label>
   <input name="username" type="text" required minlength="3" maxlength="32"
     pattern="[a-zA-Z0-9._-]{3,32}" value="${escapeHtml(username)}" autofocus>
   <label data-i18n="password">${T("password")}</label>
   <input name="password" type="password" required minlength="6" maxlength="200">
+  ${captchaHtml}
   <button type="submit" data-i18n="${submitKey}">${T(submitKey)}</button>
 </form>
 <div class="muted" style="margin-top:14px">${switchPrompt}</div>
@@ -185,7 +230,7 @@ ${error ? `<div class="banner error">${escapeHtml(error)}</div>` : ""}
 
 // ---------- "My links" dashboard ----------
 
-export function myPage({ user, anonId }) {
+export function myPage({ user, anonId, baseDomain = "" }) {
   const whoLine = user
     ? `<span data-i18n="signedInAs">${T("signedInAs")}</span> <strong>@${escapeHtml(user.username)}</strong>`
     : `<span data-i18n="anonBrowsing">${T("anonBrowsing")}</span>`;
@@ -221,16 +266,30 @@ export function myPage({ user, anonId }) {
   <form id="newForm">
     <label data-i18n="longUrl">${T("longUrl")}</label>
     <input name="url" type="url" required>
-    <div class="row" style="margin-top:8px">
+    ${baseDomain ? `<div class="row" style="margin-top:8px">
+      <div><label data-i18n="hostSlug">${T("hostSlug")}</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input name="host" type="text" pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" maxlength="63" style="text-transform:lowercase">
+          <span class="muted mono">.${escapeHtml(baseDomain)}</span>
+        </div>
+      </div>
       <div><label data-i18n="customSlug">${T("customSlug")}</label><input name="slug" type="text" pattern="[A-Za-z0-9_-]{1,64}"></div>
-      <div><label><span data-i18n="expiresIn">${T("expiresIn")}</span> <span class="muted" data-i18n="seconds">${T("seconds")}</span></label><input name="ttl" type="number" min="60"></div>
+    </div>` : `<div class="row" style="margin-top:8px">
+      <div><label data-i18n="customSlug">${T("customSlug")}</label><input name="slug" type="text" pattern="[A-Za-z0-9_-]{1,64}"></div>
+    </div>`}
+    <div class="row" style="margin-top:8px">
+      <div><label data-i18n="expiresIn">${T("expiresIn")}</label>
+        <div style="display:flex;gap:6px">
+          <input name="ttlValue" type="number" min="1" style="flex:2 1 0">
+          <span style="flex:3 1 0">${ttlUnitSelect("d")}</span>
+        </div>
+      </div>
+      <div><label data-i18n="maxClicks">${T("maxClicks")}</label><input name="maxClicks" type="number" min="1"></div>
     </div>
     <div class="row" style="margin-top:8px">
-      <div><label data-i18n="maxClicks">${T("maxClicks")}</label><input name="maxClicks" type="number" min="1"></div>
       <div><label data-i18n="password">${T("password")}</label><input name="password" type="text"></div>
+      <div><label data-i18n="note">${T("note")}</label><input name="note" type="text" maxlength="200"></div>
     </div>
-    <label data-i18n="note">${T("note")}</label>
-    <input name="note" type="text" maxlength="200">
     <div class="actions">
       <button type="button" class="ghost" id="newCancel" data-i18n="btnCancel">${T("btnCancel")}</button>
       <button type="submit" data-i18n="btnCreate">${T("btnCreate")}</button>
@@ -273,11 +332,11 @@ export function myPage({ user, anonId }) {
   </form>
 </dialog>
 
-<script>${MY_SCRIPT}</script>`;
+<script>${myScript({ baseDomain })}</script>`;
   return pageShell({ title: T("titleMy"), titleKey: "titleMy", body, user, wide: true });
 }
 
-const MY_SCRIPT = `
+function myScript({ baseDomain }) { return `
 const $ = (id) => document.getElementById(id);
 const CACHE_KEY = "shortr.recent";
 
@@ -308,22 +367,38 @@ function ownerTag(o) {
   return tag(window.t("owner" + o.kind.charAt(0).toUpperCase() + o.kind.slice(1)), o.kind);
 }
 
+const BASE_DOMAIN = ${JSON.stringify(baseDomain)};
+
+function refOf(it) { return (it.host || "") + ":" + (it.slug || ""); }
+function shortUrlOf(it) {
+  if (it.host && BASE_DOMAIN) {
+    return location.protocol + "//" + it.host + "." + BASE_DOMAIN + (it.slug ? "/" + it.slug : "/");
+  }
+  return location.origin + "/" + (it.slug || "");
+}
+function displayName(it) {
+  if (it.host && BASE_DOMAIN) return it.host + "." + BASE_DOMAIN + (it.slug ? "/" + it.slug : "");
+  return "/" + (it.slug || "");
+}
+
 function rowHtml(it) {
   const flags = [];
   if (it.expiresAt) flags.push(tag(window.t("flagTtl"), "warn"));
   if (it.maxClicks) flags.push(tag(window.t("flagCap") + " " + it.maxClicks, "warn"));
   if (it.passwordHash || it.requiresPassword) flags.push(tag(window.t("flagPwd"), "danger"));
   flags.push(ownerTag(it.owner));
-  return '<tr data-slug="' + it.slug + '">'
-    + '<td data-label="' + esc(window.t("thSlug")) + '" class="mono"><a href="/' + it.slug + '" target="_blank" rel="noopener">' + it.slug + '</a>'
-        + ' <button class="copy-btn" data-copy="' + location.origin + '/' + it.slug + '">' + window.t("btnCopy") + '</button></td>'
+  const su = shortUrlOf(it);
+  const dn = displayName(it);
+  return '<tr data-ref="' + esc(refOf(it)) + '">'
+    + '<td data-label="' + esc(window.t("thSlug")) + '" class="mono"><a href="' + esc(su) + '" target="_blank" rel="noopener">' + esc(dn) + '</a>'
+        + ' <button class="copy-btn" data-copy="' + esc(su) + '">' + window.t("btnCopy") + '</button></td>'
     + '<td data-label="' + esc(window.t("thDestination")) + '"><span class="dest mono" title="' + esc(it.url) + '">' + esc(it.url) + '</span>'
       + (it.note ? '<div class="muted">' + esc(it.note) + '</div>' : '') + '</td>'
     + '<td data-label="' + esc(window.t("thClicks")) + '">' + (it.clicks || 0) + '</td>'
     + '<td data-label="' + esc(window.t("thFlags")) + '">' + flags.join(" ") + '</td>'
     + '<td data-label="' + esc(window.t("thCreated")) + '" class="muted">' + (it.createdAt ? new Date(it.createdAt).toLocaleString() : '') + '</td>'
-    + '<td class="actions-cell"><button class="icon-btn ghost" data-edit="' + it.slug + '">' + window.t("btnEdit") + '</button> '
-      + '<button class="icon-btn danger" data-del="' + it.slug + '">' + window.t("btnDelete") + '</button></td>'
+    + '<td class="actions-cell"><button class="icon-btn ghost" data-edit="' + esc(refOf(it)) + '">' + window.t("btnEdit") + '</button> '
+      + '<button class="icon-btn danger" data-del="' + esc(refOf(it)) + '">' + window.t("btnDelete") + '</button></td>'
     + '</tr>';
 }
 
@@ -387,15 +462,17 @@ $("newForm").addEventListener("submit", async (e) => {
   const fd = new FormData(e.target);
   const body = {
     url: fd.get("url"),
+    host: fd.get("host") ? String(fd.get("host")).toLowerCase() : undefined,
     slug: fd.get("slug") || undefined,
-    ttl: fd.get("ttl") ? Number(fd.get("ttl")) : undefined,
+    ttlValue: fd.get("ttlValue") ? Number(fd.get("ttlValue")) : undefined,
+    ttlUnit: fd.get("ttlUnit") || undefined,
     maxClicks: fd.get("maxClicks") ? Number(fd.get("maxClicks")) : undefined,
     password: fd.get("password") || undefined,
     note: fd.get("note") || undefined,
   };
   try {
     const data = await api("/api/shorten", { method: "POST", body: JSON.stringify(body) });
-    rememberRecent({ slug: data.slug, shortUrl: data.shortUrl, url: data.url, editToken: data.editToken, editUrl: data.editUrl, expiresAt: data.expiresAt || null });
+    rememberRecent({ slug: data.slug, host: data.host, shortUrl: data.shortUrl, url: data.url, editToken: data.editToken, editUrl: data.editUrl, expiresAt: data.expiresAt || null });
     $("newDlg").close(); e.target.reset();
     await refresh();
   } catch (err) { alert(err.message); }
@@ -426,15 +503,16 @@ $("cacheWrap").addEventListener("click", (e) => {
 });
 
 function openEdit(rec) {
-  $("eSlug").value = rec.slug;
+  const ref = (rec.host || "") + ":" + (rec.slug || "");
+  $("eSlug").value = ref;
   $("eTok").value = "";
-  $("eSlugDisplay").value = rec.slug;
+  $("eSlugDisplay").value = displayName(rec);
   $("eUrl").value = rec.url;
   $("eExp").value = rec.expiresAt ? toLocalInput(rec.expiresAt) : "";
   $("eMax").value = rec.maxClicks || "";
   $("ePwd").value = "";
   $("eNote").value = rec.note || "";
-  $("editDlg").dataset.endpoint = "/api/me/links/" + encodeURIComponent(rec.slug);
+  $("editDlg").dataset.endpoint = "/api/me/links/" + encodeURIComponent(ref);
   $("editDlg").showModal();
 }
 
@@ -458,9 +536,10 @@ $("editForm").addEventListener("submit", async (e) => {
 });
 
 $("eDelete").addEventListener("click", async () => {
-  const slug = $("eSlug").value;
-  if (!confirm(window.t("confirmDeleteSlug", { slug }))) return;
-  try { await api("/api/me/links/" + encodeURIComponent(slug), { method: "DELETE" }); dropRecent(slug); $("editDlg").close(); await refresh(); }
+  const ref = $("eSlug").value;
+  const display = $("eSlugDisplay").value;
+  if (!confirm(window.t("confirmDeleteSlug", { slug: display }))) return;
+  try { await api("/api/me/links/" + encodeURIComponent(ref), { method: "DELETE" }); dropRecent(ref); $("editDlg").close(); await refresh(); }
   catch (err) { alert(err.message); }
 });
 
@@ -474,11 +553,29 @@ $("tokForm").addEventListener("submit", (e) => {
 });
 
 refresh();
-`;
+`; }
+
+// ---------- Admin login (after unlock URL) ----------
+
+export function adminLoginPage({ error = "", username = "" }) {
+  const body = `${backHomeLink()}<div class="card" style="max-width:440px;margin:0 auto">
+<h2 data-i18n="adminLoginHeading">${T("adminLoginHeading")}</h2>
+<div class="muted" data-i18n="adminLoginIntro" style="margin-bottom:14px">${T("adminLoginIntro")}</div>
+${error ? `<div class="banner error">${escapeHtml(error)}</div>` : ""}
+<form method="POST" action="" autocomplete="off">
+  <label data-i18n="username">${T("username")}</label>
+  <input name="username" type="text" required minlength="3" maxlength="32" value="${escapeHtml(username)}" autofocus>
+  <label data-i18n="password">${T("password")}</label>
+  <input name="password" type="password" required minlength="6" maxlength="200">
+  <button type="submit" data-i18n="btnSignin">${T("btnSignin")}</button>
+</form>
+</div>`;
+  return pageShell({ title: T("titleAdminLogin"), titleKey: "titleAdminLogin", body });
+}
 
 // ---------- Admin dashboard ----------
 
-export function adminPage() {
+export function adminPage({ baseDomain = "" } = {}) {
   const body = `<div class="card">
   <h2 data-i18n="cardAdmin">${T("cardAdmin")}</h2>
   <div class="toolbar" style="margin-top:14px">
@@ -498,16 +595,30 @@ export function adminPage() {
   <form id="newForm">
     <label data-i18n="longUrl">${T("longUrl")}</label>
     <input name="url" type="url" required>
-    <div class="row" style="margin-top:8px">
+    ${baseDomain ? `<div class="row" style="margin-top:8px">
+      <div><label data-i18n="hostSlug">${T("hostSlug")}</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input name="host" type="text" pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" maxlength="63" style="text-transform:lowercase">
+          <span class="muted mono">.${escapeHtml(baseDomain)}</span>
+        </div>
+      </div>
       <div><label data-i18n="customSlug">${T("customSlug")}</label><input name="slug" type="text" pattern="[A-Za-z0-9_-]{1,64}"></div>
-      <div><label><span data-i18n="expiresIn">${T("expiresIn")}</span> <span class="muted" data-i18n="seconds">${T("seconds")}</span></label><input name="ttl" type="number" min="60"></div>
+    </div>` : `<div class="row" style="margin-top:8px">
+      <div><label data-i18n="customSlug">${T("customSlug")}</label><input name="slug" type="text" pattern="[A-Za-z0-9_-]{1,64}"></div>
+    </div>`}
+    <div class="row" style="margin-top:8px">
+      <div><label data-i18n="expiresIn">${T("expiresIn")}</label>
+        <div style="display:flex;gap:6px">
+          <input name="ttlValue" type="number" min="1" style="flex:2 1 0">
+          <span style="flex:3 1 0">${ttlUnitSelect("d")}</span>
+        </div>
+      </div>
+      <div><label data-i18n="maxClicks">${T("maxClicks")}</label><input name="maxClicks" type="number" min="1"></div>
     </div>
     <div class="row" style="margin-top:8px">
-      <div><label data-i18n="maxClicks">${T("maxClicks")}</label><input name="maxClicks" type="number" min="1"></div>
       <div><label data-i18n="password">${T("password")}</label><input name="password" type="text"></div>
+      <div><label data-i18n="note">${T("note")}</label><input name="note" type="text" maxlength="200"></div>
     </div>
-    <label data-i18n="note">${T("note")}</label>
-    <input name="note" type="text" maxlength="200">
     <div class="actions">
       <button type="button" class="ghost" id="newCancel" data-i18n="btnCancel">${T("btnCancel")}</button>
       <button type="submit" data-i18n="btnCreate">${T("btnCreate")}</button>
@@ -539,11 +650,11 @@ export function adminPage() {
   </form>
 </dialog>
 
-<script>${ADMIN_SCRIPT}</script>`;
+<script>${adminScript({ baseDomain })}</script>`;
   return pageShell({ title: T("titleAdmin"), titleKey: "titleAdmin", body, isAdmin: true, wide: true });
 }
 
-const ADMIN_SCRIPT = `
+function adminScript({ baseDomain }) { return `
 const $ = (id) => document.getElementById(id);
 let cursor = null;
 
@@ -558,21 +669,34 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>\\"']/g, (c) =>
 function tag(t, c) { return '<span class="tag ' + c + '">' + t + '</span>'; }
 function ownerTag(o) { if (!o || !o.kind) return ''; return tag(window.t("owner" + o.kind.charAt(0).toUpperCase() + o.kind.slice(1)), o.kind); }
 
+const BASE_DOMAIN = ${JSON.stringify(baseDomain)};
+function refOf(it) { return (it.host || "") + ":" + (it.slug || ""); }
+function shortUrlOf(it) {
+  if (it.host && BASE_DOMAIN) return location.protocol + "//" + it.host + "." + BASE_DOMAIN + (it.slug ? "/" + it.slug : "/");
+  return location.origin + "/" + (it.slug || "");
+}
+function displayName(it) {
+  if (it.host && BASE_DOMAIN) return it.host + "." + BASE_DOMAIN + (it.slug ? "/" + it.slug : "");
+  return "/" + (it.slug || "");
+}
+
 function rowHtml(it) {
   const flags = [];
   if (it.expiresAt) flags.push(tag(window.t("flagTtl"), "warn"));
   if (it.maxClicks) flags.push(tag(window.t("flagCap") + " " + it.maxClicks, "warn"));
   if (it.passwordHash) flags.push(tag(window.t("flagPwd"), "danger"));
   flags.push(ownerTag(it.owner));
+  const su = shortUrlOf(it);
+  const dn = displayName(it);
   return '<tr>'
-    + '<td data-label="' + esc(window.t("thSlug")) + '" class="mono"><a href="/' + it.slug + '" target="_blank" rel="noopener">' + it.slug + '</a></td>'
+    + '<td data-label="' + esc(window.t("thSlug")) + '" class="mono"><a href="' + esc(su) + '" target="_blank" rel="noopener">' + esc(dn) + '</a></td>'
     + '<td data-label="' + esc(window.t("thDestination")) + '"><span class="dest mono" title="' + esc(it.url) + '">' + esc(it.url) + '</span>'
     + (it.note ? '<div class="muted">' + esc(it.note) + '</div>' : '') + '</td>'
     + '<td data-label="' + esc(window.t("thClicks")) + '">' + (it.clicks || 0) + '</td>'
     + '<td data-label="' + esc(window.t("thFlags")) + '">' + flags.join(" ") + '</td>'
     + '<td data-label="' + esc(window.t("thCreated")) + '" class="muted">' + (it.createdAt ? new Date(it.createdAt).toLocaleString() : "") + '</td>'
-    + '<td class="actions-cell"><button class="icon-btn ghost" data-edit="' + esc(it.slug) + '">' + window.t("btnEdit") + '</button>'
-      + ' <button class="icon-btn danger" data-del="' + esc(it.slug) + '">' + window.t("btnDelete") + '</button></td></tr>';
+    + '<td class="actions-cell"><button class="icon-btn ghost" data-edit="' + esc(refOf(it)) + '">' + window.t("btnEdit") + '</button>'
+      + ' <button class="icon-btn danger" data-del="' + esc(refOf(it)) + '">' + window.t("btnDelete") + '</button></td></tr>';
 }
 
 async function load(reset) {
@@ -614,8 +738,11 @@ $("newForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const body = {
-    url: fd.get("url"), slug: fd.get("slug") || undefined,
-    ttl: fd.get("ttl") ? Number(fd.get("ttl")) : undefined,
+    url: fd.get("url"),
+    host: fd.get("host") ? String(fd.get("host")).toLowerCase() : undefined,
+    slug: fd.get("slug") || undefined,
+    ttlValue: fd.get("ttlValue") ? Number(fd.get("ttlValue")) : undefined,
+    ttlUnit: fd.get("ttlUnit") || undefined,
     maxClicks: fd.get("maxClicks") ? Number(fd.get("maxClicks")) : undefined,
     password: fd.get("password") || undefined, note: fd.get("note") || undefined,
   };
@@ -633,7 +760,9 @@ $("tableWrap").addEventListener("click", async (e) => {
   if (t.dataset.edit) {
     try {
       const data = await api("/api/admin/links/" + encodeURIComponent(t.dataset.edit));
-      $("eSlug").value = data.slug; $("eSlugDisplay").value = data.slug;
+      const ref = (data.host || "") + ":" + (data.slug || "");
+      $("eSlug").value = ref;
+      $("eSlugDisplay").value = displayName(data);
       $("eUrl").value = data.url;
       $("eExp").value = data.expiresAt ? toLocalInput(data.expiresAt) : "";
       $("eMax").value = data.maxClicks || "";
@@ -647,7 +776,7 @@ $("tableWrap").addEventListener("click", async (e) => {
 
 $("editForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const slug = $("eSlug").value;
+  const ref = $("eSlug").value;
   const body = {
     url: $("eUrl").value,
     expiresAt: $("eExp").value ? new Date($("eExp").value).getTime() : null,
@@ -655,26 +784,29 @@ $("editForm").addEventListener("submit", async (e) => {
     password: $("ePwd").value === "" ? undefined : $("ePwd").value,
     note: $("eNote").value || "",
   };
-  try { await api("/api/admin/links/" + encodeURIComponent(slug), { method: "PATCH", body: JSON.stringify(body) }); $("editDlg").close(); await load(true); }
+  try { await api("/api/admin/links/" + encodeURIComponent(ref), { method: "PATCH", body: JSON.stringify(body) }); $("editDlg").close(); await load(true); }
   catch (err) { alert(err.message); }
 });
 
 $("eDelete").addEventListener("click", async () => {
-  const slug = $("eSlug").value;
-  if (!confirm(window.t("confirmDeleteSlug", { slug }))) return;
-  try { await api("/api/admin/links/" + encodeURIComponent(slug), { method: "DELETE" }); $("editDlg").close(); await load(true); } catch (err) { alert(err.message); }
+  const ref = $("eSlug").value;
+  const display = $("eSlugDisplay").value;
+  if (!confirm(window.t("confirmDeleteSlug", { slug: display }))) return;
+  try { await api("/api/admin/links/" + encodeURIComponent(ref), { method: "DELETE" }); $("editDlg").close(); await load(true); } catch (err) { alert(err.message); }
 });
 
 function toLocalInput(ms) { const d = new Date(ms); const p = (n) => String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes()); }
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 load(true);
-`;
+`; }
 
 // ---------- Edit by token page ----------
 
-export function tokenEditPage({ slug, link, error = "", flash = "" }) {
-  const titleHtml = T("editPageTitle").replace("{slug}", escapeHtml(slug));
+export function tokenEditPage({ host = "", slug, link, error = "", flash = "" }) {
+  // editPageTitle is "Edit /{slug}" — supply a clean ref without leading slash.
+  const display = host ? `${host}/${slug || ""}`.replace(/\/$/, "") : (slug || "");
+  const titleHtml = T("editPageTitle").replace("{slug}", escapeHtml(display));
   const body = `<div class="card" style="max-width:560px;margin:30px auto">
   <h2>${titleHtml}</h2>
   ${error ? `<div class="banner error">${escapeHtml(error)}</div>` : ""}
@@ -716,12 +848,13 @@ function localInput(ms) {
 
 // ---------- Password gate (interstitial) ----------
 
-export function passwordGate(slug, errorMessage = "") {
-  // Use the full pageShell so the gate also gets the language toggle.
+export function passwordGate(host = "", slug, errorMessage = "") {
+  // Build the action target relative to the current host (browser fills it in).
+  const action = `/${slug || ""}`;
   const body = `<div class="card" style="max-width:420px;margin:30px auto">
   <h2 data-i18n="gateHeader">${T("gateHeader")}</h2>
   <p class="muted" style="margin:0 0 14px" data-i18n="gateHint">${T("gateHint")}</p>
-  <form method="POST" action="/${escapeHtml(slug)}">
+  <form method="POST" action="${escapeHtml(action)}">
     <input name="password" type="password" autofocus required data-i18n-attr="placeholder=password" placeholder="${T("password")}">
     <button type="submit" data-i18n="btnContinue">${T("btnContinue")}</button>
     ${errorMessage ? `<div class="banner error" style="margin-top:10px">${escapeHtml(errorMessage)}</div>` : ""}

@@ -16,7 +16,7 @@ function randomFromAlphabet(alphabet, length) {
   return out;
 }
 
-export function randomSlug(length = 6) {
+export function randomSlug(length = 4) {
   return randomFromAlphabet(SLUG_ALPHABET, length);
 }
 
@@ -30,6 +30,9 @@ export function randomId() {
 
 const SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,128}$/;
+// Hostname label: 1-63 chars, alphanum and hyphens, no leading/trailing hyphen.
+// Also disallow uppercase to keep KV keys canonical.
+const HOST_LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 export function isValidSlug(slug) {
   return typeof slug === "string" && SLUG_RE.test(slug);
@@ -37,6 +40,10 @@ export function isValidSlug(slug) {
 
 export function isValidToken(token) {
   return typeof token === "string" && TOKEN_RE.test(token);
+}
+
+export function isValidHostLabel(host) {
+  return typeof host === "string" && host.length > 0 && HOST_LABEL_RE.test(host);
 }
 
 export function isReservedSlug(slug, reservedCsv = "") {
@@ -207,4 +214,80 @@ export function buildCookie(name, value, opts = {}) {
 
 export function clearCookie(name, opts = {}) {
   return buildCookie(name, "", { ...opts, maxAge: 0 });
+}
+
+// ---------- Host helpers ----------
+
+// Returns the subdomain "label" for a request relative to BASE_DOMAIN, or "" when
+// the request is for the apex domain or when no BASE_DOMAIN is configured.
+//   request host = "abc.example.com", BASE_DOMAIN = "example.com" → "abc"
+//   request host = "example.com",     BASE_DOMAIN = "example.com" → ""
+//   request host = "shortr.workers.dev", BASE_DOMAIN = ""          → ""
+//
+// Strips the port. Lower-cases the result. Rejects multi-label subdomains
+// (e.g. "a.b.example.com") by returning "" — only single-label host slugs
+// are supported, matching common short-link UX.
+export function hostLabel(requestHost, baseDomain) {
+  const h = String(requestHost || "").toLowerCase().split(":")[0];
+  const base = String(baseDomain || "").toLowerCase();
+  if (!base || h === base) return "";
+  if (!h.endsWith("." + base)) return "";
+  const sub = h.slice(0, -1 - base.length);
+  if (!sub || sub.includes(".")) return "";
+  return sub;
+}
+
+// Render the public form of a (host, slug) tuple. host="" + slug="" should
+// never happen (validated upstream).
+export function publicShortUrl({ baseUrl, host, slug, baseDomain }) {
+  const protoEnd = baseUrl.indexOf("://");
+  const proto = protoEnd > 0 ? baseUrl.slice(0, protoEnd + 3) : "https://";
+  const apex = baseUrl.slice(protoEnd + 3).split(":")[0];
+  // When the request came in on an apex of the configured BASE_DOMAIN we
+  // can build proper host-style URLs; otherwise we degrade to path-only.
+  const targetApex = baseDomain && (apex === baseDomain || apex.endsWith("." + baseDomain))
+    ? baseDomain
+    : apex;
+  const portMatch = baseUrl.slice(protoEnd + 3).match(/:(\d+)/);
+  const port = portMatch ? ":" + portMatch[1] : "";
+  if (host && baseDomain) {
+    return `${proto}${host}.${targetApex}${port}/${slug || ""}`.replace(/\/$/, slug ? "/" + slug : "");
+  }
+  return `${proto}${apex}${port}/${slug || ""}`;
+}
+
+// ---------- Turnstile (Cloudflare CAPTCHA) ----------
+
+export async function verifyTurnstile(env, token, ip) {
+  if (!env.TURNSTILE_SECRET) return { ok: true, skipped: true };
+  if (!token || typeof token !== "string") return { ok: false, error: "missing-input-response" };
+  const body = new URLSearchParams();
+  body.set("secret", env.TURNSTILE_SECRET);
+  body.set("response", token);
+  if (ip) body.set("remoteip", ip);
+  let res;
+  try {
+    res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body,
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+    });
+  } catch (e) {
+    return { ok: false, error: "turnstile-fetch-failed" };
+  }
+  if (!res.ok) return { ok: false, error: "turnstile-http-" + res.status };
+  let data;
+  try { data = await res.json(); } catch { return { ok: false, error: "turnstile-bad-response" }; }
+  if (!data.success) return { ok: false, error: (data["error-codes"] || []).join(",") || "turnstile-failed" };
+  return { ok: true };
+}
+
+// Convert a TTL in seconds + unit ("s","min","h","d","mo") into seconds.
+const TTL_UNITS = { s: 1, sec: 1, second: 1, min: 60, minute: 60, h: 3600, hour: 3600, d: 86400, day: 86400, mo: 2592000, month: 2592000 };
+export function ttlToSeconds(value, unit = "s") {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const m = TTL_UNITS[String(unit || "s").toLowerCase()];
+  if (!m) return 0;
+  return Math.floor(n * m);
 }

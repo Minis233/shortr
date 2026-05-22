@@ -39,17 +39,22 @@ function makeKv() {
 
 const KV_ID = "namespace-12345";
 const ADMIN_TOKEN = "admin-secret-1234567890abcdef";
+const ADMIN_USER_NAME = "rootadm";
+const ADMIN_USER_PASS = "rootpass-test-1";
 
 function makeEnv(over = {}) {
   return {
     LINKS: makeKv(),
     PUBLIC_BASE: "",
     RESERVED_SLUGS: "api,admin,login,signup,logout,my,assets,static,favicon.ico,robots.txt,_health,healthz",
-    DEFAULT_SLUG_LENGTH: "6",
+    DEFAULT_SLUG_LENGTH: "4",
     MAX_URL_LENGTH: "2048",
     ALLOW_PUBLIC: "true",
     LINKS_NAMESPACE_ID: KV_ID,
     ADMIN_TOKEN,
+    ADMIN_USER: ADMIN_USER_NAME,
+    BASE_DOMAIN: "",
+    TURNSTILE_SITEKEY: "",
     ...over,
   };
 }
@@ -88,6 +93,26 @@ async function jsonOf(res) { return await res.json(); }
 
 // ---------- Tests ----------
 
+// Helper: signup the admin user and log them in via the admin URL.
+async function adminSignAndLogin(env) {
+  // Step 1: create the account whose username matches ADMIN_USER.
+  await worker.fetch(req("/api/auth/signup", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=${encodeURIComponent(ADMIN_USER_NAME)}&password=${encodeURIComponent(ADMIN_USER_PASS)}`,
+  }), env, ctx);
+  // Step 2: hit the secret URL to get the unlock cookie.
+  const unlockRes = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`), env, ctx);
+  const unlock = getCookie(unlockRes, "shortr_admin_unlock");
+  // Step 3: POST credentials to that same URL.
+  const loginRes = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie: "shortr_admin_unlock=" + unlock },
+    body: `username=${encodeURIComponent(ADMIN_USER_NAME)}&password=${encodeURIComponent(ADMIN_USER_PASS)}`,
+  }), env, ctx);
+  return { unlockRes, loginRes, sid: getCookie(loginRes, "shortr_sid") };
+}
+
 await test("GET / serves landing page", async () => {
   const env = makeEnv();
   const res = await worker.fetch(req("/"), env, ctx);
@@ -103,21 +128,62 @@ await test("GET /admin without session redirects to /login", async () => {
   assert(res.headers.get("location") === "/login");
 });
 
-await test("Admin login URL sets cookie and redirects to /admin", async () => {
+await test("Admin URL only shows login form (no auto-grant)", async () => {
   const env = makeEnv();
   const res = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`), env, ctx);
-  assert(res.status === 303);
-  assert(res.headers.get("location") === "/admin");
-  const sid = getCookie(res, "shortr_sid");
-  assert(sid && sid.length > 20, "sid=" + sid);
-  // Use cookie to fetch admin page
-  const adminRes = await worker.fetch(req("/admin", { headers: { cookie: "shortr_sid=" + sid } }), env, ctx);
-  assert(adminRes.status === 200);
-  const html = await adminRes.text();
+  assert(res.status === 200, "status " + res.status);
+  const html = await res.text();
+  assert(html.includes("Admin sign-in") || html.includes("adminLoginHeading"));
+  // Must set a short-lived unlock cookie but NOT the admin session cookie.
+  assert(getCookie(res, "shortr_admin_unlock"), "missing unlock cookie");
+  assert(!getCookie(res, "shortr_sid"), "must not grant session via GET");
+});
+
+await test("Admin login flow grants session and serves dashboard", async () => {
+  const env = makeEnv();
+  const { loginRes, sid } = await adminSignAndLogin(env);
+  assert(loginRes.status === 303, "status " + loginRes.status);
+  assert(loginRes.headers.get("location") === "/admin");
+  assert(sid, "session cookie missing");
+  const adm = await worker.fetch(req("/admin", { headers: { cookie: "shortr_sid=" + sid } }), env, ctx);
+  assert(adm.status === 200);
+  const html = await adm.text();
   assert(html.includes("Admin dashboard"));
 });
 
-await test("Wrong admin URL is 404 (not even revealed)", async () => {
+await test("Admin login with wrong username is rejected", async () => {
+  const env = makeEnv();
+  await worker.fetch(req("/api/auth/signup", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=otheruser&password=otherpass-1`,
+  }), env, ctx);
+  const unlockRes = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`), env, ctx);
+  const unlock = getCookie(unlockRes, "shortr_admin_unlock");
+  const r = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", cookie: "shortr_admin_unlock=" + unlock },
+    body: "username=otheruser&password=otherpass-1",
+  }), env, ctx);
+  assert(r.status === 401, "status " + r.status);
+});
+
+await test("Admin POST without unlock cookie is 401", async () => {
+  const env = makeEnv();
+  await worker.fetch(req("/api/auth/signup", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=${ADMIN_USER_NAME}&password=${ADMIN_USER_PASS}`,
+  }), env, ctx);
+  const r = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `username=${ADMIN_USER_NAME}&password=${ADMIN_USER_PASS}`,
+  }), env, ctx);
+  assert(r.status === 401);
+});
+
+await test("Wrong admin URL is 404", async () => {
   const env = makeEnv();
   const res = await worker.fetch(req(`/${KV_ID}/wrong-token`), env, ctx);
   assert(res.status === 404, "status " + res.status);
@@ -386,8 +452,8 @@ await test("Other user cannot patch via /api/me/links", async () => {
 // ---------- Admin operations ----------
 
 async function adminSid(env) {
-  const r = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`), env, ctx);
-  return getCookie(r, "shortr_sid");
+  const { sid } = await adminSignAndLogin(env);
+  return sid;
 }
 
 await test("Admin can list every link", async () => {
@@ -548,9 +614,7 @@ await test("Logout clears cookie", async () => {
 
 await test("Admin page does not leak the namespace ID", async () => {
   const env = makeEnv();
-  // Get an admin session
-  const r = await worker.fetch(req(`/${KV_ID}/${ADMIN_TOKEN}`), env, ctx);
-  const sid = getCookie(r, "shortr_sid");
+  const sid = await adminSid(env);
   const adm = await worker.fetch(req("/admin", { headers: { cookie: "shortr_sid=" + sid } }), env, ctx);
   assert(adm.status === 200);
   const html = await adm.text();
@@ -575,6 +639,179 @@ await test("Pages declare mobile-friendly viewport", async () => {
   assert(html.includes("width=device-width"), "viewport meta missing");
   assert(html.includes("@media (max-width: 640px)"), "mobile breakpoint missing");
   assert(html.includes("table.responsive"), "responsive table CSS missing");
+});
+
+// ---------- New: TTL units, host slugs, captcha, admin two-step ----------
+
+await test("TTL with unit=d records expiry days in the future", async () => {
+  const env = makeEnv();
+  const before = Date.now();
+  const r = await worker.fetch(req("/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/ttl", slug: "ttld1", ttlValue: 7, ttlUnit: "d" }),
+  }), env, ctx);
+  assert(r.status === 201);
+  const d = await r.json();
+  const dayMs = 86400 * 1000;
+  const exp = d.expiresAt;
+  assert(exp >= before + 7 * dayMs - 60_000, "expiresAt too small: " + exp);
+  assert(exp <= before + 7 * dayMs + 60_000, "expiresAt too large: " + exp);
+});
+
+await test("TTL minutes/hours/months also work", async () => {
+  const env = makeEnv();
+  const cases = [
+    ["min", 5, 5 * 60],
+    ["h", 3, 3 * 3600],
+    ["mo", 1, 30 * 86400],
+  ];
+  let i = 0;
+  for (const [unit, value, expectSec] of cases) {
+    const before = Date.now();
+    const r = await worker.fetch(req("/api/shorten", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/ttl", slug: "tu" + (i++), ttlValue: value, ttlUnit: unit }),
+    }), env, ctx);
+    const d = await r.json();
+    const delta = d.expiresAt - before;
+    const margin = 60_000;
+    assert(delta >= expectSec * 1000 - margin && delta <= expectSec * 1000 + margin,
+      `${unit} ${value} → delta ${delta} expected ~${expectSec * 1000}`);
+  }
+});
+
+await test("Default random slug is 4 chars", async () => {
+  const env = makeEnv();
+  const r = await worker.fetch(req("/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/auto-len" }),
+  }), env, ctx);
+  const d = await r.json();
+  // first attempt uses base length; collisions can grow it. With an empty KV
+  // the first random attempt always succeeds.
+  assert(d.slug.length === 4, "slug length " + d.slug.length + " (" + d.slug + ")");
+});
+
+await test("Host slug rejected when BASE_DOMAIN is unset", async () => {
+  const env = makeEnv(); // BASE_DOMAIN = ""
+  const r = await worker.fetch(req("/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/", host: "blog" }),
+  }), env, ctx);
+  assert(r.status === 400);
+});
+
+await test("Host-only short link resolves on subdomain", async () => {
+  const env = makeEnv({ BASE_DOMAIN: "example.test" });
+  const create = await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/host-only", host: "blog" }),
+  }), env, ctx);
+  assert(create.status === 201, "status " + create.status);
+  const d = await create.json();
+  assert(d.host === "blog");
+  assert(d.slug === "");
+  assert(d.shortUrl.startsWith("https://blog.example.test"), d.shortUrl);
+  // Resolve by visiting the subdomain root.
+  const r = await worker.fetch(new Request("https://blog.example.test/", { redirect: "manual" }), env, ctx);
+  assert(r.status === 302, "status " + r.status);
+  assert(r.headers.get("location") === "https://example.com/host-only");
+});
+
+await test("Host + slug on subdomain resolves", async () => {
+  const env = makeEnv({ BASE_DOMAIN: "example.test" });
+  await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/blog-page", host: "blog", slug: "post1" }),
+  }), env, ctx);
+  const r = await worker.fetch(new Request("https://blog.example.test/post1", { redirect: "manual" }), env, ctx);
+  assert(r.status === 302);
+  assert(r.headers.get("location") === "https://example.com/blog-page");
+});
+
+await test("Subdomain root is independent from apex slug of same name", async () => {
+  const env = makeEnv({ BASE_DOMAIN: "example.test" });
+  // Create blog as subdomain (host slug)
+  await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/sub-blog", host: "blog" }),
+  }), env, ctx);
+  // Create blog as path slug at apex
+  await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/path-blog", slug: "blog" }),
+  }), env, ctx);
+  const r1 = await worker.fetch(new Request("https://blog.example.test/", { redirect: "manual" }), env, ctx);
+  const r2 = await worker.fetch(new Request("https://example.test/blog", { redirect: "manual" }), env, ctx);
+  assert(r1.headers.get("location") === "https://example.com/sub-blog", "sub got " + r1.headers.get("location"));
+  assert(r2.headers.get("location") === "https://example.com/path-blog", "apex got " + r2.headers.get("location"));
+});
+
+await test("Invalid host label rejected", async () => {
+  const env = makeEnv({ BASE_DOMAIN: "example.test" });
+  const r = await worker.fetch(new Request("https://example.test/api/shorten", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/", host: "BAD HOST!" }),
+  }), env, ctx);
+  assert(r.status === 400);
+});
+
+await test("Auth pages include 'Back to home' link", async () => {
+  const env = makeEnv();
+  const html1 = await (await worker.fetch(req("/login"), env, ctx)).text();
+  const html2 = await (await worker.fetch(req("/signup"), env, ctx)).text();
+  assert(html1.includes('href="/"') && html1.includes("data-i18n=\"backHome\""), "login page missing back-home link");
+  assert(html2.includes('href="/"') && html2.includes("data-i18n=\"backHome\""), "signup page missing back-home link");
+});
+
+await test("Signup with Turnstile enabled but missing token is rejected", async () => {
+  const env = makeEnv({
+    TURNSTILE_SITEKEY: "1x00000000000000000000AA",
+    TURNSTILE_SECRET: "1x0000000000000000000000000000000AA",
+  });
+  // Mock fetch to fail Turnstile siteverify (no real network in tests).
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("turnstile/v0/siteverify")) {
+      return new Response(JSON.stringify({ success: false, "error-codes": ["invalid-input-response"] }), { headers: { "content-type": "application/json" } });
+    }
+    return origFetch(url);
+  };
+  try {
+    const r = await worker.fetch(req("/api/auth/signup", {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "username=capman&password=longenough123",
+    }), env, ctx);
+    assert(r.status === 400, "status " + r.status);
+    const html = await r.text();
+    assert(/[Cc]aptcha/.test(html), "missing captcha error");
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+await test("Signup with Turnstile success token is accepted", async () => {
+  const env = makeEnv({
+    TURNSTILE_SITEKEY: "1x00000000000000000000AA",
+    TURNSTILE_SECRET: "1x0000000000000000000000000000000AA",
+  });
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("turnstile/v0/siteverify")) {
+      return new Response(JSON.stringify({ success: true }), { headers: { "content-type": "application/json" } });
+    }
+    return origFetch(url);
+  };
+  try {
+    const r = await worker.fetch(req("/api/auth/signup", {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "username=ts-ok&password=longenough123&cf-turnstile-response=fake-token",
+    }), env, ctx);
+    assert(r.status === 303, "status " + r.status);
+    assert(r.headers.get("location") === "/my");
+  } finally {
+    globalThis.fetch = origFetch;
+  }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
